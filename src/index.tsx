@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { createCliRenderer, SyntaxStyle, TextAttributes } from "@opentui/core";
+import { createCliRenderer, TextAttributes } from "@opentui/core";
 import { createRoot } from "@opentui/react";
+import { syntaxStyle } from "./theme";
 
-const syntaxStyle = SyntaxStyle.create();
 
 type Message = {
   role: "user" | "ai";
@@ -64,19 +64,30 @@ function App() {
   const [draft, setDraft] = useState("");
 
   return (
-    <box flexDirection="column" flexGrow={1} padding={1}>
+    <box flexDirection="column" flexGrow={1} padding={1} backgroundColor="#000000">
       <box flexGrow={1}>
         <scrollbox width="100%" height="100%" stickyScroll stickyStart="bottom">
           {messages.map((message, index) =>
             message.role === "user" ? (
-              <box key={index} width="100%" paddingLeft={1} marginBottom={1}>
+              <box
+                key={index}
+                width="100%"
+                paddingLeft={1}
+                marginBottom={1}
+                paddingTop={1}
+                paddingBottom={1}
+                // backgroundColor="#1E1E1E"
+                backgroundColor="#0e0e0e"
+                border={["left"]}
+                borderColor="#73D08A"
+              >
                 <text attributes={TextAttributes.DIM}>{message.content}</text>
               </box>
             ) : (
               <box key={index} width="100%" paddingLeft={1} marginBottom={1}>
                 <markdown content={message.content} syntaxStyle={syntaxStyle} />
               </box>
-            )
+            ),
           )}
         </scrollbox>
       </box>
