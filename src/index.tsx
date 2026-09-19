@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { createCliRenderer } from "@opentui/core";
+import { createCliRenderer, TextAttributes } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { streamAssistantResponse, type ChatMessage } from "./ai";
 import { AiMessage } from "./components/AiMessage";
+import { Spinner } from "./components/Spinner";
 import { UserMessage } from "./components/UserMessage";
 import type { AiMessage as AiMessageType, Message } from "./types";
 import type { JSONValue, ToolCallPart, ToolResultPart } from "ai";
@@ -169,6 +170,12 @@ function App() {
               <AiMessage key={index} message={message} />
             ),
           )}
+          {isStreaming ? (
+            <box flexDirection="row" marginBottom={1}>
+              <Spinner />
+              <text attributes={TextAttributes.ITALIC} fg={"#7A8A80"}> Unleashing…</text>
+            </box>
+          ) : null}
         </scrollbox>
       </box>
       <box border borderStyle="rounded" borderColor="#232323" height={3}>
