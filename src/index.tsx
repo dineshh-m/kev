@@ -1,37 +1,13 @@
 import { useState } from "react";
-import { createCliRenderer, TextAttributes } from "@opentui/core";
+import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
-import { syntaxStyle } from "./theme";
 import { streamAssistantResponse, type ChatMessage } from "./ai";
+import { AiMessage } from "./components/AiMessage";
+import { UserMessage } from "./components/UserMessage";
+import type { AiMessage as AiMessageType, Message } from "./types";
 import type { JSONValue, ToolCallPart, ToolResultPart } from "ai";
 
-type ToolStatus = "running" | "done" | "error";
-
-type ToolCall = {
-  id: string;
-  name: string;
-  argsText: string;
-  args?: Record<string, unknown>;
-  status: ToolStatus;
-  result?: string;
-  error?: string;
-};
-
-type Message =
-  | { role: "user"; content: string }
-  | { role: "ai"; content: string; streaming?: boolean; toolCalls: ToolCall[] };
-
-type AiMessage = Extract<Message, { role: "ai" }>;
-
 const ARGS_PREVIEW_LIMIT = 60;
-
-function argsPreview(tool: ToolCall): string {
-  const path = tool.args?.["path"];
-  if (typeof path === "string") return `path = ${path}`;
-  const text = tool.argsText.trim().replace(/\s+/g, " ");
-  if (!text) return "";
-  return text.length > ARGS_PREVIEW_LIMIT ? `${text.slice(0, ARGS_PREVIEW_LIMIT)}…` : text;
-}
 
 function resultSummary(toolName: string, output: unknown): string {
   const record = output as Record<string, unknown>;
@@ -53,7 +29,7 @@ function App() {
   const [draft, setDraft] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
 
-  const updateAiMessage = (fn: (message: AiMessage) => AiMessage) => {
+  const updateAiMessage = (fn: (message: AiMessageType) => AiMessageType) => {
     setMessages((prev) => {
       const last = prev[prev.length - 1];
       if (!last || last.role !== "ai") return prev;
@@ -188,69 +164,9 @@ function App() {
         <scrollbox width="100%" height="100%" stickyScroll stickyStart="bottom">
           {messages.map((message, index) =>
             message.role === "user" ? (
-              <box
-                key={index}
-                width="100%"
-                paddingLeft={1}
-                marginBottom={1}
-                paddingTop={1}
-                paddingBottom={1}
-                backgroundColor="#0e0e0e"
-                border={["left"]}
-                borderColor="#73D08A"
-              >
-                <text attributes={TextAttributes.DIM}>{message.content}</text>
-              </box>
+              <UserMessage key={index} content={message.content} />
             ) : (
-              <box
-                key={index}
-                flexDirection="column"
-                width="100%"
-                paddingLeft={1}
-                marginBottom={1}
-              >
-                {message.toolCalls.map((tool) => (
-                  <box
-                    key={tool.id}
-                    width="100%"
-                    paddingLeft={1}
-                    paddingRight={1}
-                    paddingBottom={1}
-                    marginBottom={1}
-                    border={["left"]}
-                    borderColor={tool.status === "error" ? "#E5484D" : "#73D08A"}
-                  >
-                    <text
-                      fg={tool.status === "done" ? "#73D08A" : tool.status === "error" ? "#E5484D" : "#A5D6A7"}
-                    >
-                      {tool.status === "running" ? "●" : tool.status === "done" ? "✓" : "✗"} {tool.name}
-                    </text>
-                    {argsPreview(tool) ? (
-                      <text attributes={TextAttributes.DIM}>
-                        {"  "}
-                        {argsPreview(tool)}
-                      </text>
-                    ) : null}
-                    {tool.status === "done" && tool.result ? (
-                      <text attributes={TextAttributes.DIM}>
-                        {"  → "}
-                        {tool.result}
-                      </text>
-                    ) : null}
-                    {tool.status === "error" && tool.error ? (
-                      <text attributes={TextAttributes.DIM}>
-                        {"  → "}
-                        {tool.error}
-                      </text>
-                    ) : null}
-                  </box>
-                ))}
-                <markdown
-                  content={message.content}
-                  syntaxStyle={syntaxStyle}
-                  streaming={message.streaming ?? false}
-                />
-              </box>
+              <AiMessage key={index} message={message} />
             ),
           )}
         </scrollbox>
