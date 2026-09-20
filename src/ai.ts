@@ -21,7 +21,8 @@ const MAX_STEPS = 20;
 
 export function streamAssistantResponse(messages: ChatMessage[]) {
   return streamText({
-    model: groq("openai/gpt-oss-20b"),
+    // model: groq("openai/gpt-oss-20b"),
+    model: groq("qwen/qwen3.8-27b"),
     system: SYSTEM_PROMPT,
     tools: KevTools,
     stopWhen: stepCountIs(MAX_STEPS),

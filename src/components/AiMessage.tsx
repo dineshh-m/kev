@@ -20,42 +20,25 @@ export function AiMessage({ message }: { message: AiMessage }) {
       paddingLeft={1}
       marginBottom={1}
     >
-      {message.toolCalls.map((tool) => (
-        <box
-          key={tool.id}
-          width="100%"
-          paddingLeft={1}
-          paddingRight={1}
-          paddingBottom={1}
-          marginBottom={1}
-          border={["left"]}
-          borderColor={tool.status === "error" ? "#E5484D" : "#73D08A"}
-        >
+      {message.toolCalls.map((tool) => {
+        const args = argsPreview(tool) ? ` ${argsPreview(tool)}` : "";
+        const summary =
+          tool.status === "done" && tool.result
+            ? ` → ${tool.result}`
+            : tool.status === "error" && tool.error
+              ? ` → ${tool.error}`
+              : "";
+        return (
           <text
+            key={tool.id}
+            marginBottom={1}
+            attributes={TextAttributes.DIM}
             fg={tool.status === "done" ? "#73D08A" : tool.status === "error" ? "#E5484D" : "#A5D6A7"}
           >
-            {tool.status === "running" ? "●" : tool.status === "done" ? "✓" : "✗"} {tool.name}
+            {`${tool.status === "running" ? "●" : tool.status === "done" ? "✓" : "✗"} ${tool.name}${args}${summary}`}
           </text>
-          {argsPreview(tool) ? (
-            <text attributes={TextAttributes.DIM}>
-              {"  "}
-              {argsPreview(tool)}
-            </text>
-          ) : null}
-          {tool.status === "done" && tool.result ? (
-            <text attributes={TextAttributes.DIM}>
-              {"  → "}
-              {tool.result}
-            </text>
-          ) : null}
-          {tool.status === "error" && tool.error ? (
-            <text attributes={TextAttributes.DIM}>
-              {"  → "}
-              {tool.error}
-            </text>
-          ) : null}
-        </box>
-      ))}
+        );
+      })}
       <markdown
         content={message.content}
         syntaxStyle={syntaxStyle}
