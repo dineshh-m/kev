@@ -1,4 +1,4 @@
-import { streamText, stepCountIs, type AssistantContent, type ToolContent } from "ai";
+import { convertToModelMessages, streamText, stepCountIs, type UIMessage } from "ai";
 import { groq } from "@ai-sdk/groq";
 import { KevTools } from "./tools";
 
@@ -12,20 +12,16 @@ Rules:
 - When a request involves multiple changes, present them as a short bulleted list.
 - Use markdown: fenced code blocks for commands, inline code for flags and names, headings sparingly.`;
 
-export type ChatMessage =
-  | { role: "user"; content: string }
-  | { role: "assistant"; content: string | AssistantContent }
-  | { role: "tool"; content: ToolContent };
-
 const MAX_STEPS = 20;
 
-export function streamAssistantResponse(messages: ChatMessage[]) {
+export async function streamAssistantResponse(messages: UIMessage[]) {
+  const modelMessages = await convertToModelMessages(messages, { tools: KevTools });
   return streamText({
     // model: groq("openai/gpt-oss-20b"),
     model: groq("qwen/qwen3.8-27b"),
     system: SYSTEM_PROMPT,
     tools: KevTools,
     stopWhen: stepCountIs(MAX_STEPS),
-    messages,
+    messages: modelMessages,
   });
 }
