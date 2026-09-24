@@ -4,6 +4,7 @@ import { createRoot } from "@opentui/react";
 import { readUIMessageStream, toUIMessageStream, type UIMessage } from "ai";
 import { streamAssistantResponse } from "./ai";
 import { AiMessage } from "./components/AiMessage";
+import { AsciiBanner } from "./components/AsciiBanner";
 import { Spinner } from "./components/Spinner";
 import { UserMessage } from "./components/UserMessage";
 
@@ -67,7 +68,15 @@ function App() {
   return (
     <box flexDirection="column" flexGrow={1} padding={1} backgroundColor="#000000">
       <box flexGrow={1}>
-        <scrollbox width="100%" height="100%" stickyScroll stickyStart="bottom">
+        {messages.length === 0 ? (
+          <box flexDirection="column" alignItems="center" justifyContent="center" flexGrow={1}>
+            <AsciiBanner font="block" />
+            <text fg="#7A8A80" marginTop={2}>
+              Your terminal AI assistant — ask Kev to craft a command.
+            </text>
+          </box>
+        ) : (
+          <scrollbox width="100%" height="100%" stickyScroll stickyStart="bottom">
           {messages.map((message, index) =>
             message.role === "user" ? (
               <UserMessage key={index} content={userText(message)} />
@@ -81,7 +90,8 @@ function App() {
               <text attributes={TextAttributes.ITALIC} fg={"#7A8A80"}> Unleashing…</text>
             </box>
           ) : null}
-        </scrollbox>
+          </scrollbox>
+        )}
       </box>
       <box border borderStyle="rounded" borderColor="#232323" height={3}>
         <input
