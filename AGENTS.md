@@ -27,6 +27,8 @@ Components use OpenTUI primitives: `<box>`, `<text>`, `<markdown>`, `<input>`, `
 
 ## Source layout
 
-- `src/index.tsx` — entrypoint; wires `createCliRenderer` + `createRoot` from `@opentui/core`/`@opentui/react`, holds the chat UI state.
+- `src/index.tsx` — entrypoint; wires `createCliRenderer` + `createRoot` from `@opentui/core`/`@opentui/react`.
+- `src/App.tsx` — chat UI state: message list, input draft, and the `/` command palette wiring.
 - `src/ai.ts` — streams assistant replies via the AI SDK (`streamText` with the Groq provider). No DOM or React here.
+- `src/commands.ts` — loads `~/.kev/commands/*.md` (YAML frontmatter + raw script body), validates, filters. No React here.
 - `src/theme.ts` — exports `syntaxStyle` (`SyntaxStyle.fromStyles`), consumed by the `<markdown>` component.
