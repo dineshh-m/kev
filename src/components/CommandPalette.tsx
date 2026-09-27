@@ -49,14 +49,18 @@ export function CommandPalette({
 
   return (
     <box
+      position="absolute"
+      left={0}
+      right={0}
+      bottom="100%"
+      zIndex={10}
       flexDirection="column"
-      flexShrink={0}
-      border
-      borderStyle="rounded"
-      borderColor="#232323"
       backgroundColor="#0e0e0e"
       paddingLeft={1}
       paddingRight={1}
+      border
+      borderStyle="rounded"
+      borderColor="#232323"
     >
       {commands.length === 0 ? (
         <box height={1}>

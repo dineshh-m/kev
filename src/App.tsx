@@ -163,24 +163,26 @@ export function App() {
           </scrollbox>
         )}
       </box>
-      {isPaletteOpen ? (
-        <CommandPalette
-          commands={matches}
-          totalCount={commands.length}
-          selectedIndex={activeIndex}
-          errors={loadErrors}
-          onSelect={chooseCommand}
-        />
-      ) : null}
-      <box border borderStyle="rounded" borderColor="#232323" height={3}>
-        <input
-          focused
-          width="100%"
-          value={draft}
-          onInput={setDraft}
-          placeholder="Ask Kev to create to create a command or type '/' to search"
-          onSubmit={handleSubmit}
-        />
+      <box position="relative" flexShrink={0}>
+        {isPaletteOpen ? (
+          <CommandPalette
+            commands={matches}
+            totalCount={commands.length}
+            selectedIndex={activeIndex}
+            errors={loadErrors}
+            onSelect={chooseCommand}
+          />
+        ) : null}
+        <box border borderStyle="rounded" borderColor="#232323" height={3}>
+          <input
+            focused
+            width="100%"
+            value={draft}
+            onInput={setDraft}
+            placeholder="Ask Kev to create to create a command or type '/' to search"
+            onSubmit={handleSubmit}
+          />
+        </box>
       </box>
     </box>
   );
