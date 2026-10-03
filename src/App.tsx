@@ -1,16 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { readUIMessageStream, toUIMessageStream, type UIMessage } from "ai";
+import { isDataUIPart, readUIMessageStream, toUIMessageStream, type UIMessage } from "ai";
 import { streamAssistantResponse } from "./ai";
 import { filterCommands, loadCommands, type KevCommand } from "./commands";
+import { createRunMessage, runCommand, type RunData } from "./exec";
 import { AiMessage } from "./components/AiMessage";
 import { AsciiBanner } from "./components/AsciiBanner";
 import { CommandPalette } from "./components/CommandPalette";
+import { CommandRun } from "./components/CommandRun";
 import { Spinner } from "./components/Spinner";
 import { UserMessage } from "./components/UserMessage";
 
 const SLASH_QUERY = /^\/(\S*)$/;
+const OUTPUT_CHAR_BUDGET = 256 * 1024;
+const OUTPUT_MAX_LINES = 200;
+
+type Status = "idle" | "streaming" | "running";
 
 function userText(message: UIMessage): string {
   return message.parts
@@ -19,13 +25,54 @@ function userText(message: UIMessage): string {
     .join("");
 }
 
+function appendOutput(current: string, text: string): { text: string; truncated: boolean } {
+  const combined = current + text;
+  if (combined.length <= OUTPUT_CHAR_BUDGET) return { text: combined, truncated: false };
+
+  const lines = combined.slice(0, OUTPUT_CHAR_BUDGET).split("\n");
+  if (lines.length <= OUTPUT_MAX_LINES) {
+    return { text: combined.slice(0, OUTPUT_CHAR_BUDGET), truncated: true };
+  }
+  return {
+    text: `${lines.slice(0, OUTPUT_MAX_LINES).join("\n")}\n… output truncated`,
+    truncated: true,
+  };
+}
+
+/**
+ * `UIDataTypes` is an open record, so the SDK types the data part as
+ * `{ type: `data-${string}`; data: unknown }`. Pin it to the concrete name.
+ */
+interface CommandRunPart {
+  type: "data-command";
+  id?: string;
+  data: unknown;
+}
+
+function isCommandRunPart(part: UIMessage["parts"][number]): part is CommandRunPart {
+  return isDataUIPart(part) && part.type === "data-command";
+}
+
+function MessageView({ message }: { message: UIMessage }) {
+  const run = message.parts.find(isCommandRunPart);
+  if (run) return <CommandRun data={run.data} />;
+  return <UserMessage content={userText(message)} />;
+}
+
 export function App() {
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [draft, setDraft] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
+  const [status, setStatus] = useState<Status>("idle");
   const [commands, setCommands] = useState<KevCommand[]>([]);
   const [loadErrors, setLoadErrors] = useState<string[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [pendingConfirm, setPendingConfirm] = useState<KevCommand | null>(null);
+
+  const activeRunRef = useRef<{ id: string; controller: AbortController } | null>(null);
+  // Authority for "is something already in flight". `status` mirrors it for
+  // rendering but state updates are not visible until the next render, so a
+  // held-down Enter could otherwise start a second run.
+  const busyRef = useRef(false);
 
   const slashMatch = SLASH_QUERY.exec(draft);
   const isPaletteOpen = slashMatch !== null;
@@ -55,11 +102,133 @@ export function App() {
     if (isPaletteOpen) refreshCommands();
   }, [isPaletteOpen, refreshCommands]);
 
-  const chooseCommand = useCallback((command: KevCommand) => {
-    setDraft(`/${command.name}`);
+  useEffect(() => {
+    return () => {
+      activeRunRef.current?.controller.abort();
+    };
   }, []);
 
+  const updateMessageById = useCallback(
+    (id: string, update: (message: UIMessage) => UIMessage) => {
+      setMessages((prev) => prev.map((message) => (message.id === id ? update(message) : message)));
+    },
+    [],
+  );
+
+  const patchRun = useCallback(
+    (id: string, patch: (run: RunData) => RunData) => {
+      updateMessageById(id, (message) => ({
+        ...message,
+        parts: message.parts.map((part) =>
+          isCommandRunPart(part) ? { ...part, data: patch(part.data as RunData) } : part,
+        ),
+      }));
+    },
+    [updateMessageById],
+  );
+
+  const executeCommand = useCallback(
+    async (command: KevCommand) => {
+      if (busyRef.current) return;
+      busyRef.current = true;
+
+      const id = crypto.randomUUID();
+      const controller = new AbortController();
+      const startedAt = performance.now();
+      activeRunRef.current = { id, controller };
+
+      setMessages((prev) => [...prev, createRunMessage(id, command)]);
+      setDraft("");
+      setPendingConfirm(null);
+      setStatus("running");
+
+      try {
+        for await (const event of runCommand(command, { signal: controller.signal })) {
+          if (event.type === "chunk") {
+            patchRun(id, (run) => {
+              const next = appendOutput(
+                event.stream === "stdout" ? run.stdout : run.stderr,
+                event.text,
+              );
+              return {
+                ...run,
+                [event.stream]: next.text,
+                truncated: run.truncated || next.truncated,
+              };
+            });
+            continue;
+          }
+
+          if (event.type === "error") {
+            patchRun(id, (run) => ({
+              ...run,
+              status: "error",
+              stderr: appendOutput(run.stderr, `\n${event.message}`).text,
+              durationMs: Math.round(performance.now() - startedAt),
+            }));
+            continue;
+          }
+
+          patchRun(id, (run) => ({
+            ...run,
+            status: event.status,
+            code: event.code,
+            signal: event.signal,
+            durationMs: event.durationMs,
+          }));
+        }
+      } catch (error) {
+        patchRun(id, (run) => ({
+          ...run,
+          status: "error",
+          stderr: appendOutput(run.stderr, `\n${error instanceof Error ? error.message : String(error)}`)
+            .text,
+          durationMs: Math.round(performance.now() - startedAt),
+        }));
+      } finally {
+        if (activeRunRef.current?.id === id) activeRunRef.current = null;
+        busyRef.current = false;
+        setStatus("idle");
+      }
+    },
+    [patchRun],
+  );
+
+  const requestRun = useCallback(
+    (command: KevCommand) => {
+      if (command.dangerous) {
+        setPendingConfirm(command);
+        return;
+      }
+      void executeCommand(command);
+    },
+    [executeCommand],
+  );
+
   useKeyboard((key) => {
+    if (pendingConfirm) {
+      if (key.name === "y") {
+        const command = pendingConfirm;
+        key.preventDefault();
+        setPendingConfirm(null);
+        void executeCommand(command);
+        return;
+      }
+      if (!key.ctrl && !key.meta) key.preventDefault();
+      setPendingConfirm(null);
+      return;
+    }
+
+    if (key.name === "escape") {
+      key.preventDefault();
+      if (activeRunRef.current) {
+        activeRunRef.current.controller.abort();
+        return;
+      }
+      if (isPaletteOpen) setDraft("");
+      return;
+    }
+
     if (!isPaletteOpen) return;
 
     if (key.name === "up") {
@@ -77,16 +246,11 @@ export function App() {
       setSelectedIndex((index) => (matches.length === 0 ? 0 : (index + 1) % matches.length));
       return;
     }
-    if (key.name === "escape") {
-      key.preventDefault();
-      setDraft("");
-      return;
-    }
     if (key.name === "return") {
       const command = matches[activeIndex];
       if (!command) return;
       key.preventDefault();
-      chooseCommand(command);
+      requestRun(command);
     }
   });
 
@@ -100,7 +264,8 @@ export function App() {
 
   const handleSubmit = async () => {
     const prompt = draft.trim();
-    if (!prompt || isStreaming) return;
+    if (!prompt || busyRef.current) return;
+    busyRef.current = true;
 
     const userMsg: UIMessage = {
       id: crypto.randomUUID(),
@@ -112,7 +277,7 @@ export function App() {
     const nextMessages: UIMessage[] = [...messages, userMsg];
     setMessages([...nextMessages, assistantMsg]);
     setDraft("");
-    setIsStreaming(true);
+    setStatus("streaming");
 
     try {
       const result = await streamAssistantResponse(nextMessages);
@@ -131,7 +296,8 @@ export function App() {
         parts: [{ type: "text", text: `Error: ${message}`, state: "done" }],
       });
     } finally {
-      setIsStreaming(false);
+      busyRef.current = false;
+      setStatus("idle");
     }
   };
 
@@ -147,14 +313,14 @@ export function App() {
           </box>
         ) : (
           <scrollbox width="100%" height="100%" stickyScroll stickyStart="bottom">
-          {messages.map((message, index) =>
+          {messages.map((message) =>
             message.role === "user" ? (
-              <UserMessage key={index} content={userText(message)} />
+              <MessageView key={message.id} message={message} />
             ) : (
-              <AiMessage key={index} message={message} />
+              <AiMessage key={message.id} message={message} />
             ),
           )}
-          {isStreaming ? (
+          {status === "streaming" ? (
             <box flexDirection="row" marginBottom={1}>
               <Spinner />
               <text attributes={TextAttributes.ITALIC} fg={"#7A8A80"}> Unleashing…</text>
@@ -170,7 +336,8 @@ export function App() {
             totalCount={commands.length}
             selectedIndex={activeIndex}
             errors={loadErrors}
-            onSelect={chooseCommand}
+            confirm={pendingConfirm ? { command: pendingConfirm } : null}
+            onSelect={requestRun}
           />
         ) : null}
         <box border borderStyle="rounded" borderColor="#232323" height={3}>
@@ -179,7 +346,7 @@ export function App() {
             width="100%"
             value={draft}
             onInput={setDraft}
-            placeholder="Ask Kev to create to create a command or type '/' to search"
+            placeholder="Ask Kev to create a command or type '/' to search"
             onSubmit={handleSubmit}
           />
         </box>

@@ -13,6 +13,7 @@ export interface KevCommand {
   description: string;
   type: CommandType;
   script: string;
+  dangerous: boolean;
   path: string;
 }
 
@@ -42,6 +43,15 @@ function requireType(value: string): CommandType {
     throw new Error(`"type" must be one of ${COMMAND_TYPES.join(", ")}, got "${value}"`);
   }
   return value as CommandType;
+}
+
+function optionalBoolean(header: Record<string, unknown>, key: string): boolean {
+  const value = header[key];
+  if (value === undefined) return false;
+  if (typeof value !== "boolean") {
+    throw new Error(`"${key}" must be a boolean, got ${JSON.stringify(value)}`);
+  }
+  return value;
 }
 
 export function parseCommandFile(path: string, raw: string): KevCommand {
@@ -80,15 +90,19 @@ export function parseCommandFile(path: string, raw: string): KevCommand {
     description: requireString(header, "description"),
     type: requireType(requireString(header, "type")),
     script,
+    dangerous: optionalBoolean(header, "dangerous"),
     path,
   };
 }
 
-export function serializeCommand(command: Omit<KevCommand, "path">): string {
+export function serializeCommand(
+  command: Omit<KevCommand, "path" | "dangerous"> & { dangerous?: boolean },
+): string {
   const header = [
     `name: ${JSON.stringify(command.name)}`,
     `description: ${JSON.stringify(command.description)}`,
     `type: ${JSON.stringify(command.type)}`,
+    ...(command.dangerous ? [`dangerous: true`] : []),
   ].join("\n");
   return `---\n${header}\n---\n\n${command.script.trim()}\n`;
 }

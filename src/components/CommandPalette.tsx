@@ -5,7 +5,7 @@ import type { KevCommand } from "../commands";
 const MAX_VISIBLE = 8;
 const MARKER_WIDTH = 2;
 const NAME_GAP = 2;
-const TAG_WIDTH = 7;
+const TAG_WIDTH = 8;
 const HORIZONTAL_CHROME = 2 + MARKER_WIDTH + TAG_WIDTH + 2;
 
 interface CommandPaletteProps {
@@ -13,6 +13,7 @@ interface CommandPaletteProps {
   totalCount: number;
   selectedIndex: number;
   errors: string[];
+  confirm?: { command: KevCommand } | null;
   onSelect: (command: KevCommand) => void;
 }
 
@@ -28,6 +29,7 @@ export function CommandPalette({
   totalCount,
   selectedIndex,
   errors,
+  confirm,
   onSelect,
 }: CommandPaletteProps) {
   const { width } = useTerminalDimensions();
@@ -83,7 +85,7 @@ export function CommandPalette({
               onMouseDown={(event: MouseEvent) => handleMouseDown(event, command)}
             >
               <text width={MARKER_WIDTH} fg="#73D08A">
-                {isSelected ? "▶" : " "}
+                {isSelected ? "▶" : command.dangerous ? "⚠" : " "}
               </text>
               <text width={nameWidth} fg={isSelected ? "#73D08A" : "#8BC34A"} wrapMode="none">
                 {`/${command.name}`}
@@ -96,24 +98,35 @@ export function CommandPalette({
               >
                 {truncate(command.description, descriptionWidth)}
               </text>
-              <text width={TAG_WIDTH} fg="#4A6352" attributes={TextAttributes.DIM} wrapMode="none">
-                {` ${command.type}`}
+              <text
+                width={TAG_WIDTH}
+                fg={command.dangerous ? "#E5484D" : "#4A6352"}
+                attributes={TextAttributes.DIM}
+                wrapMode="none"
+              >
+                {`${command.dangerous ? "⚠" : " "} ${command.type}`}
               </text>
             </box>
           );
         })
       )}
       <box flexDirection="row" height={1}>
-        <text fg="#3D5043" attributes={TextAttributes.DIM} wrapMode="none">
+        <text
+          fg={confirm ? "#E5484D" : "#3D5043"}
+          attributes={confirm ? TextAttributes.BOLD : TextAttributes.DIM}
+          wrapMode="none"
+        >
           {truncate(
-            errors.length > 0
-              ? `↑↓ select · enter choose · esc close · ⚠ ${errors.length} skipped: ${errors[0]}`
-              : "↑↓ select · enter choose · esc close",
+            confirm
+              ? `/${confirm.command.name} is marked dangerous — y to run, any other key to cancel`
+              : errors.length > 0
+                ? `↑↓ select · enter run · esc close · ⚠ ${errors.length} skipped: ${errors[0]}`
+                : "↑↓ select · enter run · esc close",
             Math.max(width - 12, 12),
           )}
         </text>
         <box flexGrow={1} />
-        {commands.length > 0 ? (
+        {commands.length > 0 && !confirm ? (
           <text fg="#3D5043" attributes={TextAttributes.DIM}>
             {`${Math.min(selectedIndex + 1, commands.length)}/${commands.length}`}
           </text>
