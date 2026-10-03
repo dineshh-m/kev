@@ -16,6 +16,43 @@ const SLASH_QUERY = /^\/(\S*)$/;
 const OUTPUT_CHAR_BUDGET = 256 * 1024;
 const OUTPUT_MAX_LINES = 200;
 
+const THINKING_VERBS = [
+  "Unleashing",
+  "Pondering",
+  "Consulting",
+  "Reticulating",
+  "Herding",
+  "Rambling",
+  "Staring",
+  "Convincing",
+  "Asking",
+  "Divining",
+  "Taming",
+  "Assembling",
+  "Interpolating",
+  "Shaking",
+  "Unspooling",
+  "Percolating",
+  "Twiddling",
+  "Waiting",
+  "Brewing",
+  "Cogitating",
+  "Flipping",
+  "Reading",
+  "Second-guessing",
+  "Mulling",
+  "Prompting",
+  "Considering",
+  "Talking",
+  "Humming",
+  "Spelunking",
+] as const;
+
+function pickVerb(exclude?: string): string {
+  const pool = exclude ? THINKING_VERBS.filter((verb) => verb !== exclude) : THINKING_VERBS;
+  return pool[Math.floor(Math.random() * pool.length)] ?? THINKING_VERBS[0];
+}
+
 type Status = "idle" | "streaming" | "running";
 
 function userText(message: UIMessage): string {
@@ -67,6 +104,7 @@ export function App() {
   const [loadErrors, setLoadErrors] = useState<string[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [pendingConfirm, setPendingConfirm] = useState<KevCommand | null>(null);
+  const [thinkingVerb, setThinkingVerb] = useState<string>(() => pickVerb());
 
   const activeRunRef = useRef<{ id: string; controller: AbortController } | null>(null);
   // Authority for "is something already in flight". `status` mirrors it for
@@ -277,6 +315,7 @@ export function App() {
     const nextMessages: UIMessage[] = [...messages, userMsg];
     setMessages([...nextMessages, assistantMsg]);
     setDraft("");
+    setThinkingVerb((previous) => pickVerb(previous));
     setStatus("streaming");
 
     try {
@@ -323,7 +362,7 @@ export function App() {
           {status === "streaming" ? (
             <box flexDirection="row" marginBottom={1}>
               <Spinner />
-              <text attributes={TextAttributes.ITALIC} fg={"#7A8A80"}> Unleashing…</text>
+              <text attributes={TextAttributes.ITALIC} fg={"#7A8A80"}> {thinkingVerb}…</text>
             </box>
           ) : null}
           </scrollbox>
