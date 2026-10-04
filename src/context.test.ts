@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { convertToModelMessages, isDataUIPart, type UIMessage } from "ai";
+import { convertToModelMessages, type UIMessage } from "ai";
 import type { KevCommand } from "./commands";
-import { createRunMessage, runCommand, type RunData, type RunEvent } from "./exec";
+import { runCommand, type RunData, type RunEvent } from "./exec";
+import { chatMessages, messageEntry, runEntry, type TranscriptEntry } from "./transcript";
 
 function command(script: string, type: KevCommand["type"] = "bash"): KevCommand {
   return {
@@ -12,12 +13,6 @@ function command(script: string, type: KevCommand["type"] = "bash"): KevCommand 
     dangerous: false,
     path: "/tmp/secrets.md",
   };
-}
-
-function partData(message: UIMessage, index: number): unknown {
-  const part = message.parts[index];
-  if (!part || !isDataUIPart(part)) throw new Error(`part ${index} is not a data part`);
-  return part.data;
 }
 
 async function runToCompletion(source: string): Promise<RunData> {
@@ -46,33 +41,48 @@ async function runToCompletion(source: string): Promise<RunData> {
   };
 }
 
-function attach(message: UIMessage, data: RunData): UIMessage {
-  return {
-    ...message,
-    parts: message.parts.map((part) => (isDataUIPart(part) ? { ...part, data } : part)),
-  };
+function say(text: string): UIMessage {
+  return { id: crypto.randomUUID(), role: "user", parts: [{ type: "text", text, state: "done" }] };
 }
 
 describe("command runs and model context", () => {
-  test("a run message holds the invocation text and a data-command part", () => {
-    const message = createRunMessage("run-1", command("echo hi"));
-    expect(message.role).toBe("user");
-    expect(message.parts[0]).toMatchObject({ type: "text", text: "/secrets" });
-    expect(message.parts[1]).toMatchObject({ type: "data-command" });
+  test("a run entry starts out running with empty output", () => {
+    const entry = runEntry("run-1", command("echo hi"));
+    expect(entry).toMatchObject({ kind: "run", id: "run-1" });
+    expect(entry.data).toEqual({
+      name: "secrets",
+      type: "bash",
+      status: "running",
+      stdout: "",
+      stderr: "",
+      code: null,
+      signal: null,
+      durationMs: 0,
+      truncated: false,
+    });
   });
 
-  test("real command output reaches the message but never the model", async () => {
+  test("runs are not UIMessages, so no data part can be serialized into context", () => {
+    const entry = runEntry("run-1", command("echo hi"));
+    expect("parts" in entry).toBe(false);
+    expect("role" in entry).toBe(false);
+  });
+
+  test("real command output reaches the transcript but never the model", async () => {
     const source = "printf 'S3CRET-TOKEN'";
     const run = await runToCompletion(source);
-    const message = attach(createRunMessage("run-1", command(source)), run);
+    const entry = { ...runEntry("run-1", command(source)), data: run };
+    const prompt = say("scan my env");
+    const transcript: TranscriptEntry[] = [messageEntry(prompt), entry];
 
     // The transcript keeps the output for the person using the app.
-    expect((partData(message, 1) as RunData).stdout).toContain("S3CRET-TOKEN");
+    expect(entry.data.stdout).toContain("S3CRET-TOKEN");
 
-    // The model only ever sees the invocation.
-    const modelMessages = await convertToModelMessages([message]);
+    // The model only ever sees the chat messages.
+    expect(chatMessages(transcript)).toEqual([prompt]);
+    const modelMessages = await convertToModelMessages(chatMessages(transcript));
     expect(modelMessages).toEqual([
-      { role: "user", content: [{ type: "text", text: "/secrets" }] },
+      { role: "user", content: [{ type: "text", text: "scan my env" }] },
     ]);
     expect(JSON.stringify(modelMessages)).not.toContain("S3CRET-TOKEN");
   });
@@ -80,18 +90,26 @@ describe("command runs and model context", () => {
   test("stderr is also kept out of model context", async () => {
     const source = "printf 'LEAKED' >&2; exit 1";
     const run = await runToCompletion(source);
-    const message = attach(createRunMessage("run-2", command(source)), run);
+    const transcript: TranscriptEntry[] = [
+      messageEntry(say("deploy")),
+      { ...runEntry("run-2", command(source)), data: run },
+    ];
 
-    expect((partData(message, 1) as RunData).stderr).toContain("LEAKED");
-    const modelMessages = await convertToModelMessages([message]);
+    expect(transcript[1]?.kind === "run" && transcript[1].data.stderr).toContain("LEAKED");
+    const modelMessages = await convertToModelMessages(chatMessages(transcript));
     expect(JSON.stringify(modelMessages)).not.toContain("LEAKED");
+    expect(JSON.stringify(modelMessages)).not.toContain("secrets");
   });
 
-  test("a run message never converts to empty model content", async () => {
-    const message = createRunMessage("run-3", command("true"));
-    const modelMessages = await convertToModelMessages([message]);
-    const [first] = modelMessages;
-    expect(first).toBeDefined();
-    expect((first?.content as unknown[]).length).toBeGreaterThan(0);
+  test("chatMessages keeps chat order and drops every run", () => {
+    const first = say("first");
+    const second = say("second");
+    const chat = chatMessages([
+      messageEntry(first),
+      runEntry("run-1", command("true")),
+      messageEntry(second),
+      runEntry("run-2", command("true")),
+    ]);
+    expect(chat).toEqual([first, second]);
   });
 });

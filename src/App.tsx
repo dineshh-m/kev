@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { isDataUIPart, readUIMessageStream, toUIMessageStream, type UIMessage } from "ai";
+import { readUIMessageStream, toUIMessageStream, type UIMessage } from "ai";
 import { streamAssistantResponse } from "./ai";
 import { filterCommands, loadCommands, type KevCommand } from "./commands";
-import { createRunMessage, runCommand, type RunData } from "./exec";
+import { runCommand, type RunData } from "./exec";
+import {
+  chatMessages,
+  messageEntry,
+  runEntry,
+  type TranscriptEntry,
+} from "./transcript";
 import { AiMessage } from "./components/AiMessage";
 import { AsciiBanner } from "./components/AsciiBanner";
 import { CommandPalette } from "./components/CommandPalette";
@@ -76,28 +82,18 @@ function appendOutput(current: string, text: string): { text: string; truncated:
   };
 }
 
-/**
- * `UIDataTypes` is an open record, so the SDK types the data part as
- * `{ type: `data-${string}`; data: unknown }`. Pin it to the concrete name.
- */
-interface CommandRunPart {
-  type: "data-command";
-  id?: string;
-  data: unknown;
-}
-
-function isCommandRunPart(part: UIMessage["parts"][number]): part is CommandRunPart {
-  return isDataUIPart(part) && part.type === "data-command";
-}
-
-function MessageView({ message }: { message: UIMessage }) {
-  const run = message.parts.find(isCommandRunPart);
-  if (run) return <CommandRun data={run.data} />;
-  return <UserMessage content={userText(message)} />;
+function EntryView({ entry }: { entry: TranscriptEntry }) {
+  if (entry.kind === "run") return <CommandRun data={entry.data} />;
+  const { message } = entry;
+  return message.role === "user" ? (
+    <UserMessage content={userText(message)} />
+  ) : (
+    <AiMessage message={message} />
+  );
 }
 
 export function App() {
-  const [messages, setMessages] = useState<UIMessage[]>([]);
+  const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [commands, setCommands] = useState<KevCommand[]>([]);
@@ -146,23 +142,20 @@ export function App() {
     };
   }, []);
 
-  const updateMessageById = useCallback(
-    (id: string, update: (message: UIMessage) => UIMessage) => {
-      setMessages((prev) => prev.map((message) => (message.id === id ? update(message) : message)));
+  const updateEntryById = useCallback(
+    (id: string, update: (entry: TranscriptEntry) => TranscriptEntry) => {
+      setEntries((prev) => prev.map((entry) => (entry.id === id ? update(entry) : entry)));
     },
     [],
   );
 
   const patchRun = useCallback(
     (id: string, patch: (run: RunData) => RunData) => {
-      updateMessageById(id, (message) => ({
-        ...message,
-        parts: message.parts.map((part) =>
-          isCommandRunPart(part) ? { ...part, data: patch(part.data as RunData) } : part,
-        ),
-      }));
+      updateEntryById(id, (entry) =>
+        entry.kind === "run" ? { ...entry, data: patch(entry.data) } : entry,
+      );
     },
-    [updateMessageById],
+    [updateEntryById],
   );
 
   const executeCommand = useCallback(
@@ -175,7 +168,7 @@ export function App() {
       const startedAt = performance.now();
       activeRunRef.current = { id, controller };
 
-      setMessages((prev) => [...prev, createRunMessage(id, command)]);
+      setEntries((prev) => [...prev, runEntry(id, command)]);
       setDraft("");
       setPendingConfirm(null);
       setStatus("running");
@@ -293,10 +286,10 @@ export function App() {
   });
 
   const updateLastAi = (next: UIMessage) => {
-    setMessages((prev) => {
+    setEntries((prev) => {
       const last = prev[prev.length - 1];
-      if (!last || last.role !== "assistant") return prev;
-      return [...prev.slice(0, -1), next];
+      if (!last || last.kind !== "message" || last.message.role !== "assistant") return prev;
+      return [...prev.slice(0, -1), messageEntry(next)];
     });
   };
 
@@ -312,14 +305,15 @@ export function App() {
     };
     const assistantMsg: UIMessage = { id: crypto.randomUUID(), role: "assistant", parts: [] };
 
-    const nextMessages: UIMessage[] = [...messages, userMsg];
-    setMessages([...nextMessages, assistantMsg]);
+    // Only the chat entries go to the model; command runs stay UI-only.
+    const nextEntries: TranscriptEntry[] = [...entries, messageEntry(userMsg)];
+    setEntries([...nextEntries, messageEntry(assistantMsg)]);
     setDraft("");
     setThinkingVerb((previous) => pickVerb(previous));
     setStatus("streaming");
 
     try {
-      const result = await streamAssistantResponse(nextMessages);
+      const result = await streamAssistantResponse(chatMessages(nextEntries));
 
       for await (const uiMessage of readUIMessageStream({
         stream: toUIMessageStream({ stream: result.stream }),
@@ -343,7 +337,7 @@ export function App() {
   return (
     <box flexDirection="column" flexGrow={1} padding={1} backgroundColor="#000000">
       <box flexGrow={1}>
-        {messages.length === 0 ? (
+        {entries.length === 0 ? (
           <box flexDirection="column" alignItems="center" justifyContent="center" flexGrow={1}>
             <AsciiBanner font="block" />
             <text fg="#7A8A80" marginTop={2}>
@@ -352,13 +346,9 @@ export function App() {
           </box>
         ) : (
           <scrollbox width="100%" height="100%" stickyScroll stickyStart="bottom">
-          {messages.map((message) =>
-            message.role === "user" ? (
-              <MessageView key={message.id} message={message} />
-            ) : (
-              <AiMessage key={message.id} message={message} />
-            ),
-          )}
+          {entries.map((entry) => (
+            <EntryView key={entry.id} entry={entry} />
+          ))}
           {status === "streaming" ? (
             <box flexDirection="row" marginBottom={1}>
               <Spinner />

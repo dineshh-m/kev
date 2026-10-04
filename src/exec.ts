@@ -1,4 +1,3 @@
-import type { UIMessage } from "ai";
 import type { CommandType, KevCommand } from "./commands";
 
 export const DEFAULT_TIMEOUT_MS = 120_000;
@@ -37,36 +36,6 @@ export interface RunOptions {
 
 export function interpreterFor(type: CommandType): [string, string] {
   return type === "python" ? ["python3", "-c"] : ["bash", "-c"];
-}
-
-function emptyRun(command: KevCommand): RunData {
-  return {
-    name: command.name,
-    type: command.type,
-    status: "running",
-    stdout: "",
-    stderr: "",
-    code: null,
-    signal: null,
-    durationMs: 0,
-    truncated: false,
-  };
-}
-
-/**
- * A run is a user message carrying the invocation as text plus a `data-command`
- * part. The text part is what the model eventually sees; `convertToModelMessages`
- * drops the data part, so command output never enters model context.
- */
-export function createRunMessage(id: string, command: KevCommand): UIMessage {
-  return {
-    id,
-    role: "user",
-    parts: [
-      { type: "text", text: `/${command.name}`, state: "done" },
-      { type: "data-command", data: emptyRun(command) },
-    ],
-  };
 }
 
 type PipedChild = ReturnType<typeof Bun.spawn<"ignore", "pipe", "pipe">>;

@@ -32,6 +32,7 @@ Components use OpenTUI primitives: `<box>`, `<text>`, `<markdown>`, `<input>`, `
 - `src/ai.ts` — streams assistant replies via the AI SDK (`streamText` with the Groq provider). No DOM or React here.
 - `src/commands.ts` — loads `~/.kev/commands/*.md` (YAML frontmatter + raw script body), validates, filters. No React here.
 - `src/exec.ts` — runs a command locally with `Bun.spawn` (stdin ignored, stdout/stderr piped) and streams output back as events. Never invoked by the model.
+- `src/transcript.ts` — the UI transcript as `TranscriptEntry[]`: chat messages and UI-only run entries, plus `chatMessages()` which is what the model gets. No React here.
 - `src/tools.ts` — `readFile` / `listFiles` tools handed to the model via `streamText`.
 - `src/theme.ts` — exports `syntaxStyle` (`SyntaxStyle.fromStyles`), consumed by the `<markdown>` component.
 - `src/components/` — presentational components: `AiMessage`, `UserMessage`, `CommandRun`, `CommandPalette`, `Spinner`, `AsciiBanner`.
@@ -40,7 +41,7 @@ Components use OpenTUI primitives: `<box>`, `<text>`, `<markdown>`, `<input>`, `
 
 Selecting a palette entry runs the command on the client. Nothing about the run is sent to the model.
 
-- A run is recorded as a `data-command` part on a user message. `convertToModelMessages` drops `data-*` parts by default, so the output stays out of model context; the accompanying text part (`/name`) is all the model sees.
+- A run is a `{ kind: "run" }` transcript entry (`src/transcript.ts`), not a `UIMessage`. It carries no text or data parts, so it cannot be serialized into model context; `chatMessages()` filters runs out before `streamAssistantResponse` sees anything. The model is not even told that a command ran.
 - Only one thing runs at a time — `status` in `App.tsx` is `"idle" | "streaming" | "running"`.
 - Esc cancels a running command via an `AbortController`. Ctrl+C is *not* wired up for this: OpenTUI installs its own SIGINT handler that calls `renderer.destroy()`.
 - `dangerous: true` in the frontmatter forces a y/n confirm in the palette footer. Esc or any other key cancels.
