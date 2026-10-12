@@ -5,8 +5,13 @@ import { syntaxStyle } from "../theme";
 const ARGS_PREVIEW_LIMIT = 60;
 
 function argsPreview(input: unknown): string {
-  if (input && typeof input === "object" && "path" in input && typeof input.path === "string") {
-    return `path = ${input.path}`;
+  if (input && typeof input === "object") {
+    if ("path" in input && typeof input.path === "string") {
+      return `path = ${input.path}`;
+    }
+    if ("name" in input && typeof input.name === "string") {
+      return `name = ${input.name}`;
+    }
   }
   if (input === undefined || input === null) return "";
   const text = JSON.stringify(input).replace(/\s+/g, " ");
@@ -23,6 +28,15 @@ function resultSummary(toolName: string, output: unknown): string {
   }
   if (toolName === "listFiles" && Array.isArray(record.entries)) {
     return `${record.entries.length} entries`;
+  }
+  if (toolName === "listCommands" && Array.isArray(record.commands)) {
+    return `${record.commands.length} commands`;
+  }
+  if (toolName === "createCommand" || toolName === "updateCommand") {
+    const changed = Array.isArray(record.changed) && record.changed.length > 0
+      ? ` (${record.changed.join(", ")})`
+      : "";
+    return `saved ${String(record.path ?? "")}${changed}`;
   }
   const text = JSON.stringify(output);
   return text.length > ARGS_PREVIEW_LIMIT ? `${text.slice(0, ARGS_PREVIEW_LIMIT)}…` : text;

@@ -1,10 +1,10 @@
-import { readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, extname, join } from "node:path";
 
 export const COMMANDS_DIR = join(homedir(), ".kev", "commands");
 
-const COMMAND_TYPES = ["bash", "python"] as const;
+export const COMMAND_TYPES = ["bash", "python"] as const;
 
 export type CommandType = (typeof COMMAND_TYPES)[number];
 
@@ -20,6 +20,26 @@ export interface KevCommand {
 export interface LoadedCommands {
   commands: KevCommand[];
   errors: string[];
+}
+
+/** Every field a command needs to exist. */
+export interface CommandInput {
+  name: string;
+  description: string;
+  type: CommandType;
+  script: string;
+  dangerous?: boolean;
+}
+
+/**
+ * An edit to an existing command. Omitted fields keep their current value, so a
+ * patch that only carries `script` cannot accidentally clear `dangerous`.
+ */
+export type CommandPatch = { name: string } & Partial<Omit<CommandInput, "name">>;
+
+export interface UpdatedCommand {
+  command: KevCommand;
+  changed: string[];
 }
 
 const FRONTMATTER = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
@@ -107,6 +127,10 @@ export function serializeCommand(
   return `---\n${header}\n---\n\n${command.script.trim()}\n`;
 }
 
+export function commandPath(name: string, dir: string = COMMANDS_DIR): string {
+  return join(dir, `${name}${COMMAND_EXTENSION}`);
+}
+
 export async function loadCommands(dir: string = COMMANDS_DIR): Promise<LoadedCommands> {
   let entries: string[];
   try {
@@ -140,6 +164,75 @@ export async function loadCommands(dir: string = COMMANDS_DIR): Promise<LoadedCo
   commands.sort((a, b) => a.name.localeCompare(b.name));
 
   return { commands, errors };
+}
+
+/**
+ * Serialize, validate, then write. Parsing the serialized text is what makes
+ * this safe to expose to the model: `parseCommandFile` is the same validator
+ * the palette uses, so a bad name, type or empty script fails here and nothing
+ * reaches disk. Returns the parsed command, which is the ground truth for
+ * what was actually stored.
+ */
+async function writeValidated(input: CommandInput, dir: string): Promise<KevCommand> {
+  const content = serializeCommand(input);
+  const path = commandPath(input.name, dir);
+  const parsed = parseCommandFile(path, content);
+
+  await mkdir(dir, { recursive: true });
+  await writeFile(path, content, "utf8");
+
+  return parsed;
+}
+
+export async function commandExists(name: string, dir: string = COMMANDS_DIR): Promise<boolean> {
+  try {
+    return (await stat(commandPath(name, dir))).isFile();
+  } catch {
+    return false;
+  }
+}
+
+export async function readCommandFile(name: string, dir: string = COMMANDS_DIR): Promise<KevCommand> {
+  const path = commandPath(name, dir);
+  try {
+    return parseCommandFile(path, await readFile(path, "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(`no command named "${name}" in ${dir}`);
+    }
+    throw error;
+  }
+}
+
+export async function createCommandFile(
+  input: CommandInput,
+  dir: string = COMMANDS_DIR,
+): Promise<KevCommand> {
+  if (await commandExists(input.name, dir)) {
+    throw new Error(`command "${input.name}" already exists, use updateCommand instead`);
+  }
+  return writeValidated(input, dir);
+}
+
+export async function updateCommandFile(
+  patch: CommandPatch,
+  dir: string = COMMANDS_DIR,
+): Promise<UpdatedCommand> {
+  const existing = await readCommandFile(patch.name, dir);
+
+  const input: CommandInput = {
+    name: existing.name,
+    description: patch.description ?? existing.description,
+    type: patch.type ?? existing.type,
+    script: patch.script ?? existing.script,
+    dangerous: patch.dangerous ?? existing.dangerous,
+  };
+
+  const changed = (["description", "type", "script", "dangerous"] as const).filter(
+    (field) => input[field] !== existing[field],
+  );
+
+  return { command: await writeValidated(input, dir), changed };
 }
 
 export function filterCommands(commands: KevCommand[], query: string): KevCommand[] {
