@@ -1,4 +1,4 @@
-import type { CommandType, KevCommand } from "./commands";
+import { buildParamEnv, type CommandType, type KevCommand } from "./commands";
 
 export const DEFAULT_TIMEOUT_MS = 120_000;
 
@@ -32,6 +32,7 @@ export type RunEvent =
 export interface RunOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
+  params?: Record<string, string>;
 }
 
 export function interpreterFor(type: CommandType): [string, string] {
@@ -123,6 +124,7 @@ export async function* runCommand(
     child = Bun.spawn<"ignore", "pipe", "pipe">({
       cmd: [...interpreterFor(command.type), command.script],
       cwd: process.cwd(),
+      env: { ...process.env, ...buildParamEnv(options.params ?? {}) },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",

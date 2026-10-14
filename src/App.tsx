@@ -15,6 +15,7 @@ import { AiMessage } from "./components/AiMessage";
 import { AsciiBanner } from "./components/AsciiBanner";
 import { CommandPalette } from "./components/CommandPalette";
 import { CommandRun } from "./components/CommandRun";
+import { ParamForm } from "./components/ParamForm";
 import { Spinner } from "./components/Spinner";
 import { UserMessage } from "./components/UserMessage";
 
@@ -99,7 +100,16 @@ export function App() {
   const [commands, setCommands] = useState<KevCommand[]>([]);
   const [loadErrors, setLoadErrors] = useState<string[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [pendingConfirm, setPendingConfirm] = useState<KevCommand | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    command: KevCommand;
+    values: Record<string, string>;
+  } | null>(null);
+  const [pendingParams, setPendingParams] = useState<{
+    command: KevCommand;
+    values: string[];
+  } | null>(null);
+  const [paramFocus, setParamFocus] = useState(0);
+  const [paramError, setParamError] = useState<string | null>(null);
   const [thinkingVerb, setThinkingVerb] = useState<string>(() => pickVerb());
 
   const activeRunRef = useRef<{ id: string; controller: AbortController } | null>(null);
@@ -159,7 +169,7 @@ export function App() {
   );
 
   const executeCommand = useCallback(
-    async (command: KevCommand) => {
+    async (command: KevCommand, values: Record<string, string>) => {
       if (busyRef.current) return;
       busyRef.current = true;
 
@@ -174,7 +184,7 @@ export function App() {
       setStatus("running");
 
       try {
-        for await (const event of runCommand(command, { signal: controller.signal })) {
+        for await (const event of runCommand(command, { signal: controller.signal, params: values })) {
           if (event.type === "chunk") {
             patchRun(id, (run) => {
               const next = appendOutput(
@@ -225,28 +235,121 @@ export function App() {
     [patchRun],
   );
 
-  const requestRun = useCallback(
-    (command: KevCommand) => {
+  const proceed = useCallback(
+    (command: KevCommand, values: Record<string, string>) => {
       if (command.dangerous) {
-        setPendingConfirm(command);
+        setPendingConfirm({ command, values });
         return;
       }
-      void executeCommand(command);
+      void executeCommand(command, values);
     },
     [executeCommand],
+  );
+
+  const requestRun = useCallback(
+    (command: KevCommand) => {
+      if (command.params.length > 0) {
+        setPendingParams({
+          command,
+          values: command.params.map((param) => param.default ?? ""),
+        });
+        setParamFocus(0);
+        setParamError(null);
+        setDraft("");
+        return;
+      }
+      proceed(command, {});
+    },
+    [proceed],
+  );
+
+  const updateParam = useCallback((index: number, value: string) => {
+    setPendingParams((prev) => {
+      if (!prev) return prev;
+      const values = [...prev.values];
+      values[index] = value;
+      return { ...prev, values };
+    });
+    setParamError(null);
+  }, []);
+
+  const submitParams = useCallback(
+    (request: { command: KevCommand; values: string[] }) => {
+      const missing = request.command.params.find(
+        (param, index) => param.required && (request.values[index] ?? "").trim() === "",
+      );
+      if (missing) {
+        setParamError(`"${missing.description?.trim() || missing.name}" is required`);
+        return;
+      }
+
+      const values = Object.fromEntries(
+        request.command.params.map((param, index) => [
+          param.name,
+          request.values[index] ?? param.default ?? "",
+        ]),
+      );
+      setPendingParams(null);
+      setParamError(null);
+      proceed(request.command, values);
+    },
+    [proceed],
+  );
+
+  const handleParamSubmit = useCallback(
+    (index: number) => {
+      if (!pendingParams) return;
+      if (index < pendingParams.command.params.length - 1) {
+        setParamFocus(index + 1);
+        setParamError(null);
+        return;
+      }
+      submitParams(pendingParams);
+    },
+    [pendingParams, submitParams],
   );
 
   useKeyboard((key) => {
     if (pendingConfirm) {
       if (key.name === "y") {
-        const command = pendingConfirm;
+        const { command, values } = pendingConfirm;
         key.preventDefault();
         setPendingConfirm(null);
-        void executeCommand(command);
+        void executeCommand(command, values);
         return;
       }
       if (!key.ctrl && !key.meta) key.preventDefault();
       setPendingConfirm(null);
+      return;
+    }
+
+    if (pendingParams) {
+      const count = pendingParams.command.params.length;
+      const move = (delta: number) => {
+        key.preventDefault();
+        setParamFocus((index) => (index + delta + count) % count);
+        setParamError(null);
+      };
+
+      if (key.name === "escape") {
+        key.preventDefault();
+        setPendingParams(null);
+        setParamError(null);
+        return;
+      }
+      if (key.name === "tab") {
+        move(key.shift ? -1 : 1);
+        return;
+      }
+      if (key.name === "up") {
+        move(-1);
+        return;
+      }
+      if (key.name === "down") {
+        move(1);
+        return;
+      }
+      // Enter is left to the focused input's onSubmit so it advances or runs.
       return;
     }
 
@@ -365,13 +468,23 @@ export function App() {
             totalCount={commands.length}
             selectedIndex={activeIndex}
             errors={loadErrors}
-            confirm={pendingConfirm ? { command: pendingConfirm } : null}
+            confirm={pendingConfirm ? { command: pendingConfirm.command } : null}
             onSelect={requestRun}
+          />
+        ) : null}
+        {pendingParams ? (
+          <ParamForm
+            command={pendingParams.command}
+            values={pendingParams.values}
+            focusedIndex={paramFocus}
+            error={paramError}
+            onChange={updateParam}
+            onSubmit={handleParamSubmit}
           />
         ) : null}
         <box border borderStyle="rounded" borderColor="#232323" height={3}>
           <input
-            focused
+            focused={pendingParams === null}
             width="100%"
             value={draft}
             onInput={setDraft}

@@ -3,8 +3,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  buildParamEnv,
   createCommandFile,
   loadCommands,
+  paramEnvName,
   parseCommandFile,
   readCommandFile,
   serializeCommand,
@@ -66,6 +68,86 @@ describe("parseCommandFile", () => {
     const bad = `---\nname: "demo"\ndescription: "d"\ntype: "zsh"\n---\n\necho hi\n`;
     expect(() => parseCommandFile("/tmp/demo.md", bad)).toThrow(/"type" must be one of/);
   });
+
+  test("defaults params to an empty list", () => {
+    expect(parseCommandFile("/tmp/demo.md", raw("echo hi")).params).toEqual([]);
+  });
+
+  test("reads params with a description, default and required flag", () => {
+    const command = parseCommandFile(
+      "/tmp/demo.md",
+      raw("echo hi", [
+        "params:",
+        "  - name: who",
+        '    description: "Who to greet"',
+        '    default: "world"',
+        "    required: true",
+        "  - name: greeting",
+      ]),
+    );
+    expect(command.params).toEqual([
+      { name: "who", description: "Who to greet", default: "world", required: true },
+      { name: "greeting" },
+    ]);
+  });
+
+  test("keeps an empty default distinct from no default", () => {
+    const [withEmpty] = parseCommandFile(
+      "/tmp/demo.md",
+      raw("echo hi", ["params:", "  - name: who", '    default: ""']),
+    ).params;
+    const [without] = parseCommandFile(
+      "/tmp/demo.md",
+      raw("echo hi", ["params:", "  - name: who"]),
+    ).params;
+    expect(withEmpty).toEqual({ name: "who", default: "" });
+    expect(without).toEqual({ name: "who" });
+  });
+
+  test("rejects params that are not a list", () => {
+    expect(() =>
+      parseCommandFile("/tmp/demo.md", raw("echo hi", ['params: "nope"'])),
+    ).toThrow(/"params" must be a list/);
+  });
+
+  test("rejects a parameter without a valid name", () => {
+    expect(() =>
+      parseCommandFile("/tmp/demo.md", raw("echo hi", ["params:", '  - default: "x"'])),
+    ).toThrow(/non-empty "name"/);
+    expect(() =>
+      parseCommandFile("/tmp/demo.md", raw("echo hi", ["params:", "  - name: 1bad"])),
+    ).toThrow(/"name" must match/);
+  });
+
+  test("rejects duplicate parameter names", () => {
+    expect(() =>
+      parseCommandFile(
+        "/tmp/demo.md",
+        raw("echo hi", ["params:", "  - name: who", "  - name: who"]),
+      ),
+    ).toThrow(/duplicate parameter name/);
+  });
+
+  test("rejects two parameters that collapse to the same env var", () => {
+    expect(() =>
+      parseCommandFile(
+        "/tmp/demo.md",
+        raw("echo hi", ["params:", "  - name: my-param", "  - name: my_param"]),
+      ),
+    ).toThrow(/collides with another/);
+  });
+
+  test("rejects a non-string default and a non-boolean required", () => {
+    expect(() =>
+      parseCommandFile("/tmp/demo.md", raw("echo hi", ["params:", "  - name: who", "    default: 3"])),
+    ).toThrow(/"who.default" must be a string/);
+    expect(() =>
+      parseCommandFile(
+        "/tmp/demo.md",
+        raw("echo hi", ["params:", "  - name: who", '    required: "yes"']),
+      ),
+    ).toThrow(/"who.required" must be a boolean/);
+  });
 });
 
 describe("serializeCommand", () => {
@@ -93,7 +175,10 @@ describe("serializeCommand", () => {
   });
 
   test("round-trips through parseCommandFile", () => {
-    const command: Omit<KevCommand, "path" | "dangerous"> & { dangerous?: boolean } = {
+    const command: Omit<KevCommand, "path" | "dangerous" | "params"> & {
+      dangerous?: boolean;
+      params?: KevCommand["params"];
+    } = {
       name: "demo",
       description: "A demo command",
       type: "python",
@@ -102,6 +187,51 @@ describe("serializeCommand", () => {
     };
     const parsed = parseCommandFile("/tmp/demo.md", serializeCommand(command));
     expect(parsed).toMatchObject(command);
+  });
+
+  test("emits a params block only when parameters are present", () => {
+    const serialized = serializeCommand({
+      name: "greet",
+      description: "Greet someone",
+      type: "bash",
+      script: 'echo "$KEV_PARAM_WHO"',
+      params: [
+        { name: "who", description: "Who to greet", default: "world" },
+        { name: "shout", required: true },
+      ],
+    });
+    expect(serialized).toBe(
+      '---\nname: "greet"\ndescription: "Greet someone"\ntype: "bash"\nparams:\n' +
+        '  - name: "who"\n    description: "Who to greet"\n    default: "world"\n' +
+        '  - name: "shout"\n    required: true\n---\n\necho "$KEV_PARAM_WHO"\n',
+    );
+  });
+
+  test("round-trips params through parseCommandFile", () => {
+    const params: KevCommand["params"] = [
+      { name: "who", description: "Who to greet", default: "world", required: true },
+      { name: "greeting", default: "" },
+    ];
+    const parsed = parseCommandFile(
+      "/tmp/greet.md",
+      serializeCommand({ name: "greet", description: "d", type: "bash", script: "echo", params }),
+    );
+    expect(parsed.params).toEqual(params);
+  });
+});
+
+describe("param env", () => {
+  test("maps a name to a KEV_PARAM_ env var", () => {
+    expect(paramEnvName("who")).toBe("KEV_PARAM_WHO");
+    expect(paramEnvName("source-branch")).toBe("KEV_PARAM_SOURCE_BRANCH");
+    expect(paramEnvName("a.b")).toBe("KEV_PARAM_A_B");
+  });
+
+  test("builds an env object from resolved values", () => {
+    expect(buildParamEnv({ who: "world", "my-file": "x" })).toEqual({
+      KEV_PARAM_WHO: "world",
+      KEV_PARAM_MY_FILE: "x",
+    });
   });
 });
 
@@ -204,6 +334,41 @@ describe("command writes", () => {
     const { command, changed } = await updateCommandFile({ name: "todos" }, dir);
     expect(changed).toEqual([]);
     expect(command.script).toBe("rg -c TODO");
+  });
+
+  test("create persists params and loads them back", async () => {
+    await createCommandFile(
+      input({
+        script: 'echo "$KEV_PARAM_WHO"',
+        params: [{ name: "who", description: "Who to greet", default: "world", required: true }],
+      }),
+      dir,
+    );
+    expect((await readCommandFile("todos", dir)).params).toEqual([
+      { name: "who", description: "Who to greet", default: "world", required: true },
+    ]);
+  });
+
+  test("update merges params, reports the change and can clear them", async () => {
+    await createCommandFile(input({ params: [{ name: "who" }] }), dir);
+
+    const added = await updateCommandFile(
+      { name: "todos", params: [{ name: "who" }, { name: "shout", required: true }] },
+      dir,
+    );
+    expect(added.changed).toEqual(["params"]);
+    expect(added.command.params).toEqual([{ name: "who" }, { name: "shout", required: true }]);
+
+    const cleared = await updateCommandFile({ name: "todos", params: [] }, dir);
+    expect(cleared.changed).toEqual(["params"]);
+    expect((await readCommandFile("todos", dir)).params).toEqual([]);
+  });
+
+  test("update leaves params alone when not passed", async () => {
+    await createCommandFile(input({ params: [{ name: "who" }] }), dir);
+    const { command, changed } = await updateCommandFile({ name: "todos", description: "Count" }, dir);
+    expect(changed).toEqual(["description"]);
+    expect(command.params).toEqual([{ name: "who" }]);
   });
 
   test("update on a missing command throws instead of creating one", async () => {

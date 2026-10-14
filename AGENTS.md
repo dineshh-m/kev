@@ -45,6 +45,7 @@ Selecting a palette entry runs the command on the client. Nothing about the run 
 - Only one thing runs at a time — `status` in `App.tsx` is `"idle" | "streaming" | "running"`.
 - Esc cancels a running command via an `AbortController`. Ctrl+C is *not* wired up for this: OpenTUI installs its own SIGINT handler that calls `renderer.destroy()`.
 - `dangerous: true` in the frontmatter forces a y/n confirm in the palette footer. Esc or any other key cancels.
+- Commands may declare `params` in frontmatter (name, optional description/default/required). Selecting such a command opens a `ParamForm` overlay first; the required fields must be non-empty before submit, then the dangerous confirm (if any) runs, then execution. Values are resolved from input (falling back to defaults) and injected as `KEV_PARAM_<UPPER_NAME>` environment variables in `src/exec.ts` — never interpolated into the script text.
 - Output is capped in the accumulator (`OUTPUT_CHAR_BUDGET`, `OUTPUT_MAX_LINES`), not via `maxBufferBytes`, which would kill the process.
 - Cancellation is detected from a non-null exit signal, not `Subprocess.killed` — that field is true after ordinary exits too.
 
@@ -53,8 +54,9 @@ Selecting a palette entry runs the command on the client. Nothing about the run 
 The model can create and edit command files, but it can never run one. The split is strict: `src/tools.ts` writes, `src/exec.ts` runs, and nothing connects them.
 
 - Authoring goes through `listCommands` / `readCommand` / `createCommand` / `updateCommand`, all backed by `src/commands.ts`. No tool takes a filesystem path — a command is addressed by name only, so the model cannot write outside `~/.kev/commands`. Do not add one.
-- Every write is `serializeCommand` → `parseCommandFile` → `writeFile` (`writeValidated` in `src/commands.ts`). The parse step *is* the validation gate, and it is the same validator the palette uses, so a bad name, unknown type or empty script throws before anything reaches disk. Keep writes going through it rather than re-checking fields by hand.
-- `createCommandFile` refuses an existing name and points at `updateCommand`; there is no overwrite and no delete. `updateCommandFile` merges, so an omitted field — `dangerous` included — keeps its current value and a patch can clear the flag as easily as set it.
+- Every write is `serializeCommand` → `parseCommandFile` → `writeFile` (`writeValidated` in `src/commands.ts`). The parse step *is* the validation gate, and it is the same validator the palette uses, so a bad name, unknown type, empty script or malformed `params` entry throws before anything reaches disk. Keep writes going through it rather than re-checking fields by hand.
+- `createCommandFile` refuses an existing name and points at `updateCommand`; there is no overwrite and no delete. `updateCommandFile` merges, so an omitted field — `dangerous` and `params` included — keeps its current value and a patch can clear the flag or params (`params: []`) as easily as set it.
+- Param values never reach the model or the script text; they are handed to `exec.ts` as a plain `Record<string, string>` and exported as env vars by `buildParamEnv`/`paramEnvName` in `src/commands.ts`.
 - Writes apply immediately; there is no approval step. The y/n gate covers *execution* only.
 - The model supplies the `dangerous` flag and the system prompt asks it to, but nothing enforces that. A script deleting data without the flag will run unconfirmed.
 - The palette re-reads the directory on open (`refreshCommands` in `App.tsx`), so a freshly written command shows up on the next `/` with no extra wiring.

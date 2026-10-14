@@ -9,6 +9,7 @@ function command(script: string, type: KevCommand["type"] = "bash"): KevCommand 
     type,
     script,
     dangerous: false,
+    params: [],
     path: "/tmp/demo.md",
   };
 }
@@ -109,5 +110,26 @@ describe("runCommand", () => {
 
   test("defaults to a two minute timeout", () => {
     expect(DEFAULT_TIMEOUT_MS).toBe(120_000);
+  });
+
+  test("exposes params to bash as KEV_PARAM_* env vars", async () => {
+    const events = await collect('printf "%s" "$KEV_PARAM_WHO"', "bash", {
+      params: { who: "world" },
+    });
+    expect(output(events, "stdout")).toBe("world");
+  });
+
+  test("normalizes a param name into its env var", async () => {
+    const events = await collect('printf "%s" "$KEV_PARAM_SOURCE_BRANCH"', "bash", {
+      params: { "source-branch": "main" },
+    });
+    expect(output(events, "stdout")).toBe("main");
+  });
+
+  test("exposes params to python as environment variables", async () => {
+    const events = await collect("import os; print(os.environ['KEV_PARAM_WHO'])", "python", {
+      params: { who: "world" },
+    });
+    expect(output(events, "stdout").trim()).toBe("world");
   });
 });

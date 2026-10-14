@@ -36,6 +36,35 @@ const DANGEROUS_PROPERTY = {
     "Set true when the script deletes or overwrites data, rewrites history or remote refs, or changes permissions or running processes. The user is asked to confirm before a dangerous command runs.",
 } as const;
 
+const PARAMS_PROPERTY = {
+  type: "array",
+  description:
+    "Values the user is prompted to fill in before the command runs. Each value is exported to the script as the environment variable KEV_PARAM_<UPPER_NAME>, so reference it in bash as $KEV_PARAM_<UPPER_NAME> or in Python as os.environ['KEV_PARAM_<UPPER_NAME>']. Omit when the command needs no input.",
+  items: {
+    type: "object",
+    properties: {
+      name: {
+        type: "string",
+        description: "Parameter name used in the env var, e.g. 'branch' -> KEV_PARAM_BRANCH.",
+      },
+      description: {
+        type: "string",
+        description: "Short label shown on the input the user fills in.",
+      },
+      default: {
+        type: "string",
+        description: "Pre-filled value. Leave off to start empty.",
+      },
+      required: {
+        type: "boolean",
+        description: "When true, the user cannot submit an empty value.",
+      },
+    },
+    required: ["name"],
+    additionalProperties: false,
+  },
+} as const;
+
 export const KevTools: ToolSet = {
   readFile: tool({
     description:
@@ -130,11 +159,12 @@ export const KevTools: ToolSet = {
     execute: async () => {
       const { commands, errors } = await loadCommands();
       return {
-        commands: commands.map(({ name, description, type, dangerous }) => ({
+        commands: commands.map(({ name, description, type, dangerous, params }) => ({
           name,
           description,
           type,
           dangerous,
+          params: params.map((param) => param.name),
         })),
         errors,
       };
@@ -157,6 +187,7 @@ export const KevTools: ToolSet = {
         description: command.description,
         type: command.type,
         dangerous: command.dangerous,
+        params: command.params,
         script: command.script,
         path: command.path,
       };
@@ -175,15 +206,16 @@ export const KevTools: ToolSet = {
         script: {
           type: "string",
           description:
-            "The script body. It runs with no arguments, in the project directory, so reach for paths relative to the project rather than absolute ones.",
+            "The script body. It runs in the project directory, so reach for paths relative to the project rather than absolute ones. Parameter values arrive as KEV_PARAM_* environment variables.",
         },
         dangerous: DANGEROUS_PROPERTY,
+        params: PARAMS_PROPERTY,
       },
       required: ["name", "description", "type", "script"],
       additionalProperties: false,
     }),
-    execute: async ({ name, description, type, script, dangerous }) => {
-      const command = await createCommandFile({ name, description, type, script, dangerous });
+    execute: async ({ name, description, type, script, dangerous, params }) => {
+      const command = await createCommandFile({ name, description, type, script, dangerous, params });
       return { name: command.name, path: command.path, created: true };
     },
   }),
@@ -202,17 +234,19 @@ export const KevTools: ToolSet = {
           description: "Replacement script body. Only needed when the script itself changes.",
         },
         dangerous: DANGEROUS_PROPERTY,
+        params: PARAMS_PROPERTY,
       },
       required: ["name"],
       additionalProperties: false,
     }),
-    execute: async ({ name, description, type, script, dangerous }) => {
+    execute: async ({ name, description, type, script, dangerous, params }) => {
       const { command, changed } = await updateCommandFile({
         name,
         ...(description === undefined ? {} : { description }),
         ...(type === undefined ? {} : { type }),
         ...(script === undefined ? {} : { script }),
         ...(dangerous === undefined ? {} : { dangerous }),
+        ...(params === undefined ? {} : { params }),
       });
       return { name: command.name, path: command.path, updated: true, changed };
     },

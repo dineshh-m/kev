@@ -11,6 +11,7 @@ function command(script: string, type: KevCommand["type"] = "bash"): KevCommand 
     type,
     script,
     dangerous: false,
+    params: [],
     path: "/tmp/secrets.md",
   };
 }
