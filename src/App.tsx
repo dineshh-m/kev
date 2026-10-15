@@ -12,7 +12,7 @@ import {
   type TranscriptEntry,
 } from "./transcript";
 import { AiMessage } from "./components/AiMessage";
-import { AsciiBanner } from "./components/AsciiBanner";
+import Banner from "./components/AsciiBanner";
 import { CommandPalette } from "./components/CommandPalette";
 import { CommandRun } from "./components/CommandRun";
 import { ParamForm } from "./components/ParamForm";
@@ -442,7 +442,7 @@ export function App() {
       <box flexGrow={1}>
         {entries.length === 0 ? (
           <box flexDirection="column" alignItems="center" justifyContent="center" flexGrow={1}>
-            <AsciiBanner font="block" />
+            <Banner />
             <text fg="#7A8A80" marginTop={2}>
               Your terminal AI assistant — ask Kev to craft a command.
             </text>
