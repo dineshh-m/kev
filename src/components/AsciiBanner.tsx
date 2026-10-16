@@ -1,5 +1,5 @@
 import type { ASCIIFontName } from "@opentui/core";
-import { useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { ReactNode } from "react"
 
 
@@ -8,6 +8,16 @@ import type { ReactNode } from "react"
 // so pixels stay square and the banner is only 8 text rows tall.
 const GLYPH_WIDTH = 9
 const GLYPH_HEIGHT = 16
+const TEXT_ROWS = GLYPH_HEIGHT / 2
+
+// Draw-in: rows appear top to bottom, one every DRAW_STEP_MS.
+const DRAW_STEP_MS = 40
+// Shimmer: a brighter band sweeps down the gradient, then rests.
+const SHIMMER_STEP_MS = 55
+const SHIMMER_BAND = 5
+const SHIMMER_STRENGTH = 0.5
+const SHIMMER_SWEEP_MS = 1400
+const SHIMMER_PAUSE_MS = 2600
 
 const FONT: Record<string, string[]> = {
   K: [
@@ -102,6 +112,30 @@ export interface BannerProps {
   gradient?: string[]
   /** Blank pixel columns between letters. */
   letterSpacing?: number
+  /** Reveal rows one-by-one on mount, then run the shimmer sweep. */
+  animate?: boolean
+}
+
+function mixTowardWhite(hex: string, amount: number): string {
+  const raw = hex.replace("#", "")
+  if (raw.length !== 6) return hex
+  const num = Number.parseInt(raw, 16)
+  const channel = (shift: number) => {
+    const value = (num >> shift) & 0xff
+    return Math.round(value + (255 - value) * amount)
+  }
+  const pair = (value: number) => value.toString(16).padStart(2, "0")
+  return `#${pair(channel(16))}${pair(channel(8))}${pair(channel(0))}`
+}
+
+// Lightens rows near `position` (pixel-row space) toward white.
+function applyShimmer(gradient: string[], position: number | null): string[] {
+  if (position === null) return gradient
+  return gradient.map((color, y) => {
+    const distance = Math.abs(y - position)
+    if (distance >= SHIMMER_BAND) return color
+    return mixTowardWhite(color, SHIMMER_STRENGTH * (1 - distance / SHIMMER_BAND))
+  })
 }
 
 function buildGrid(text: string, letterSpacing: number): string[] {
@@ -176,19 +210,54 @@ export function Banner({
   text = "KEV",
   gradient = DEFAULT_GRADIENT,
   letterSpacing = 1,
+  animate = true,
 }: BannerProps) {
+  const [revealed, setRevealed] = useState(() => (animate ? 0 : TEXT_ROWS))
+  const [shimmer, setShimmer] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!animate || revealed >= TEXT_ROWS) return
+    const timer = setTimeout(() => setRevealed((count) => count + 1), DRAW_STEP_MS)
+    return () => clearTimeout(timer)
+  }, [animate, revealed])
+
+  useEffect(() => {
+    if (revealed < TEXT_ROWS) return
+    const sweepSteps = Math.max(Math.ceil(SHIMMER_SWEEP_MS / SHIMMER_STEP_MS), 2)
+    const cycleSteps = sweepSteps + Math.ceil(SHIMMER_PAUSE_MS / SHIMMER_STEP_MS)
+    // Start inside the pause phase so the first sweep waits a beat.
+    let step = sweepSteps
+    const timer = setInterval(() => {
+      step = (step + 1) % cycleSteps
+      if (step >= sweepSteps) {
+        setShimmer(null)
+        return
+      }
+      const progress = step / (sweepSteps - 1)
+      setShimmer(-SHIMMER_BAND + progress * (GLYPH_HEIGHT + SHIMMER_BAND * 2))
+    }, SHIMMER_STEP_MS)
+    return () => clearInterval(timer)
+  }, [revealed])
+
   const rows = useMemo(() => {
     const grid = buildGrid(text, letterSpacing)
-    return Array.from({ length: GLYPH_HEIGHT / 2 }, (_, r) =>
-      renderTextRow(grid, gradient, r),
-    )
-  }, [text, gradient, letterSpacing])
+    const colors = applyShimmer(gradient, shimmer)
+    return Array.from({ length: TEXT_ROWS }, (_, r) => ({
+      width: (grid[r * 2] ?? "").length,
+      nodes: renderTextRow(grid, colors, r),
+    }))
+  }, [text, gradient, letterSpacing, shimmer])
 
   return (
     <box flexDirection="column" flexShrink={0}>
-      {rows.map((nodes, i) => (
-        <text key={i}>{nodes}</text>
-      ))}
+      {rows.map((row, i) =>
+        i < revealed ? (
+          <text key={i}>{row.nodes}</text>
+        ) : (
+          // Hold the row's height so the draw-in does not reflow the layout.
+          <text key={i}>{" ".repeat(row.width)}</text>
+        ),
+      )}
     </box>
   )
 }

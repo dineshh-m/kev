@@ -36,7 +36,7 @@ Components use OpenTUI primitives: `<box>`, `<text>`, `<markdown>`, `<input>`, `
 - `src/sessions.ts` — persists transcripts as JSON under `~/.kev/sessions/<id>.json`, and repairs cut-short entries on load. No React here.
 - `src/tools.ts` — the tools handed to the model via `streamText`: `readFile` / `listFiles` for project inspection, plus `listCommands` / `readCommand` / `createCommand` / `updateCommand` for authoring commands.
 - `src/theme.ts` — exports `syntaxStyle` (`SyntaxStyle.fromStyles`), consumed by the `<markdown>` component.
-- `src/components/` — presentational components: `AiMessage`, `UserMessage`, `CommandRun`, `CommandPalette`, `ParamForm`, `SessionPicker`, `Spinner`, `AsciiBanner`.
+- `src/components/` — presentational components: `AiMessage`, `UserMessage`, `CommandRun`, `CommandPalette`, `ParamForm`, `SessionPicker`, `Spinner`, `AsciiBanner`, `HomeHero` (the empty-transcript welcome: framed banner panel, rotating tips, key legend, status line).
 
 ## Command execution
 

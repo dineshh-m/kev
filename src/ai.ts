@@ -29,6 +29,8 @@ Always set \`dangerous: true\` when a script deletes or overwrites data, rewrite
 
 After a write, report what you saved in one line — name and what it does. Never claim a command was created or changed unless the tool call succeeded.`;
 
+export const MODEL_ID = "qwen/qwen3.8-27b";
+
 const MAX_STEPS = 20;
 
 export async function streamAssistantResponse(messages: UIMessage[], signal?: AbortSignal) {
@@ -36,7 +38,7 @@ export async function streamAssistantResponse(messages: UIMessage[], signal?: Ab
   log(`Messages: ${JSON.stringify(messages)}`)
   return streamText({
     // model: groq("openai/gpt-oss-20b"),
-    model: groq("qwen/qwen3.8-27b"),
+    model: groq(MODEL_ID),
     // model: groq("meta-models/muse-spark-open"),
     system: SYSTEM_PROMPT,
     tools: KevTools,

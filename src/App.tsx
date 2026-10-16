@@ -26,9 +26,9 @@ import {
   type TranscriptEntry,
 } from "./transcript";
 import { AiMessage } from "./components/AiMessage";
-import Banner from "./components/AsciiBanner";
 import { CommandPalette } from "./components/CommandPalette";
 import { CommandRun } from "./components/CommandRun";
+import { HomeHero } from "./components/HomeHero";
 import { ParamForm } from "./components/ParamForm";
 import { SessionPicker } from "./components/SessionPicker";
 import { Spinner } from "./components/Spinner";
@@ -612,11 +612,13 @@ export function App() {
     <box flexDirection="column" flexGrow={1} padding={1} backgroundColor="#000000">
       <box flexGrow={1}>
         {entries.length === 0 ? (
-          <box flexDirection="column" alignItems="center" justifyContent="center" flexGrow={1}>
-            <Banner />
-            <text fg="#7A8A80" marginTop={2}>
-              Your terminal AI assistant — ask Kev to craft a command.
-            </text>
+          <box
+            flexDirection="column"
+            alignItems="center"
+            justifyContent="center"
+            flexGrow={1}
+          >
+            <HomeHero commandCount={BUILTIN_COMMANDS.length + commands.length} />
           </box>
         ) : (
           <scrollbox width="100%" height="100%" stickyScroll stickyStart="bottom">
