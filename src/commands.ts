@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, extname, join } from "node:path";
+import { BUILTIN_NAMES } from "./builtins";
 
 export const COMMANDS_DIR = join(homedir(), ".kev", "commands");
 
@@ -57,7 +58,7 @@ export interface UpdatedCommand {
 }
 
 const FRONTMATTER = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
-const NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
+export const NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 const PARAM_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 const COMMAND_EXTENSION = ".md";
 
@@ -186,6 +187,9 @@ export function parseCommandFile(path: string, raw: string): KevCommand {
   const name = requireString(header, "name");
   if (!NAME_PATTERN.test(name)) {
     throw new Error(`"name" must match ${NAME_PATTERN.source}, got "${name}"`);
+  }
+  if (BUILTIN_NAMES.has(name)) {
+    throw new Error(`"${name}" is a reserved built-in command`);
   }
   const fileName = basename(path, extname(path));
   if (fileName !== name) {
@@ -353,7 +357,10 @@ export async function updateCommandFile(
   return { command: await writeValidated(input, dir), changed };
 }
 
-export function filterCommands(commands: KevCommand[], query: string): KevCommand[] {
+export function filterCommands<T extends { name: string; description: string }>(
+  commands: T[],
+  query: string,
+): T[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return commands;
 

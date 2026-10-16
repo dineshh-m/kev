@@ -15,6 +15,7 @@ import {
   type CommandType,
   type KevCommand,
 } from "./commands";
+import { BUILTIN_NAMES } from "./builtins";
 
 function raw(body: string, header: string[] = []): string {
   return `---\n${["name: \"demo\"", 'description: "A demo command"', 'type: "bash"', ...header].join(
@@ -58,6 +59,13 @@ describe("parseCommandFile", () => {
 
   test("rejects a name that disagrees with the filename", () => {
     expect(() => parseCommandFile("/tmp/other.md", raw("echo hi"))).toThrow(/the file is named/);
+  });
+
+  test("rejects a name reserved for a built-in", () => {
+    for (const name of BUILTIN_NAMES) {
+      const reserved = `---\nname: "${name}"\ndescription: "d"\ntype: "bash"\n---\n\necho hi\n`;
+      expect(() => parseCommandFile(`/tmp/${name}.md`, reserved)).toThrow(/reserved built-in/);
+    }
   });
 
   test("rejects an empty script body", () => {
@@ -278,6 +286,13 @@ describe("command writes", () => {
       /already exists/,
     );
     expect((await readCommandFile("todos", dir)).script).toBe("rg -c TODO");
+  });
+
+  test("create refuses a name reserved for a built-in", async () => {
+    await expect(createCommandFile(input({ name: "new-session" }), dir)).rejects.toThrow(
+      /reserved built-in/,
+    );
+    expect((await loadCommands(dir)).commands).toEqual([]);
   });
 
   test("an invalid command is never written", async () => {

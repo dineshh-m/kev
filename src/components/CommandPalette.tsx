@@ -1,5 +1,6 @@
 import { MouseButton, TextAttributes, type MouseEvent } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
+import { isBuiltinCommand, type PaletteCommand } from "../builtins";
 import type { KevCommand } from "../commands";
 
 const MAX_VISIBLE = 8;
@@ -9,12 +10,12 @@ const TAG_WIDTH = 8;
 const HORIZONTAL_CHROME = 2 + MARKER_WIDTH + TAG_WIDTH + 2;
 
 interface CommandPaletteProps {
-  commands: KevCommand[];
+  commands: PaletteCommand[];
   totalCount: number;
   selectedIndex: number;
   errors: string[];
   confirm?: { command: KevCommand } | null;
-  onSelect: (command: KevCommand) => void;
+  onSelect: (command: PaletteCommand) => void;
 }
 
 function truncate(value: string, max: number): string {
@@ -43,7 +44,7 @@ export function CommandPalette({
     visible.reduce((widest, command) => Math.max(widest, command.name.length + 1), 0) + NAME_GAP;
   const descriptionWidth = Math.max(width - HORIZONTAL_CHROME - nameWidth, 8);
 
-  const handleMouseDown = (event: MouseEvent, command: KevCommand) => {
+  const handleMouseDown = (event: MouseEvent, command: PaletteCommand) => {
     if (event.button !== MouseButton.LEFT) return;
     event.preventDefault();
     onSelect(command);
@@ -76,16 +77,18 @@ export function CommandPalette({
         visible.map((command, offset) => {
           const index = start + offset;
           const isSelected = index === selectedIndex;
+          const builtin = isBuiltinCommand(command);
+          const dangerous = !builtin && command.dangerous;
           return (
             <box
-              key={command.path}
+              key={command.name}
               flexDirection="row"
               height={1}
               backgroundColor={isSelected ? "#1c1c1c" : "transparent"}
               onMouseDown={(event: MouseEvent) => handleMouseDown(event, command)}
             >
               <text width={MARKER_WIDTH} fg="#73D08A">
-                {isSelected ? "▶" : command.dangerous ? "⚠" : " "}
+                {isSelected ? "▶" : dangerous ? "⚠" : " "}
               </text>
               <text width={nameWidth} fg={isSelected ? "#73D08A" : "#8BC34A"} wrapMode="none">
                 {`/${command.name}`}
@@ -100,11 +103,11 @@ export function CommandPalette({
               </text>
               <text
                 width={TAG_WIDTH}
-                fg={command.dangerous ? "#E5484D" : "#4A6352"}
+                fg={dangerous ? "#E5484D" : builtin ? "#6C8EBF" : "#4A6352"}
                 attributes={TextAttributes.DIM}
                 wrapMode="none"
               >
-                {`${command.dangerous ? "⚠" : " "} ${command.type}`}
+                {`${dangerous ? "⚠" : " "} ${builtin ? "tui" : command.type}`}
               </text>
             </box>
           );

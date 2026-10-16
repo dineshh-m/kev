@@ -19,6 +19,8 @@ Commands are real. A command you write is saved to the user's machine and can be
 - createCommand — for a new command. Fails if the name is taken.
 - updateCommand — for an existing one. Send only the fields you are changing.
 
+The palette also lists built-in commands (tagged "tui") that act on the tool itself rather than running a script, such as \`new-session\`, which clears the transcript. Their names are reserved: you cannot create, change or run them, and createCommand rejects \`new-session\`.
+
 Each command has a name, a one-line description, a type ("bash" or "python") and a script body. Scripts are executed locally by the user, in the project directory, so use paths relative to the project and do not assume a shell setup you have not verified. Never edit a command file by hand and never echo frontmatter to the user — the tools own that.
 
 When a command needs input that varies per run, give it \`params\`: a list of {name, description, default, required}. Before running, the user is prompted to fill each one. Each value is exported to the script as the environment variable KEV_PARAM_<UPPER_NAME> — reference it in bash as "$KEV_PARAM_<UPPER_NAME>" (quote it) or in Python as os.environ["KEV_PARAM_<UPPER_NAME>"]. Use a \`default\` for a sensible fallback and mark a param \`required\` only when the script cannot run without it. Prefer parameters over hard-coding values the user will want to change.
@@ -29,15 +31,17 @@ After a write, report what you saved in one line — name and what it does. Neve
 
 const MAX_STEPS = 20;
 
-export async function streamAssistantResponse(messages: UIMessage[]) {
+export async function streamAssistantResponse(messages: UIMessage[], signal?: AbortSignal) {
   const modelMessages = await convertToModelMessages(messages, { tools: KevTools });
   log(`Messages: ${JSON.stringify(messages)}`)
   return streamText({
     // model: groq("openai/gpt-oss-20b"),
     model: groq("qwen/qwen3.8-27b"),
+    // model: groq("meta-models/muse-spark-open"),
     system: SYSTEM_PROMPT,
     tools: KevTools,
     stopWhen: stepCountIs(MAX_STEPS),
     messages: modelMessages,
+    abortSignal: signal,
   });
 }

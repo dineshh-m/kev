@@ -3,6 +3,12 @@ import { TextAttributes } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { readUIMessageStream, toUIMessageStream, type UIMessage } from "ai";
 import { streamAssistantResponse } from "./ai";
+import {
+  BUILTIN_COMMANDS,
+  isBuiltinCommand,
+  type BuiltinName,
+  type PaletteCommand,
+} from "./builtins";
 import { filterCommands, loadCommands, type KevCommand } from "./commands";
 import { runCommand, type RunData } from "./exec";
 import {
@@ -113,6 +119,11 @@ export function App() {
   const [thinkingVerb, setThinkingVerb] = useState<string>(() => pickVerb());
 
   const activeRunRef = useRef<{ id: string; controller: AbortController } | null>(null);
+  const streamControllerRef = useRef<AbortController | null>(null);
+  // Bumped whenever the transcript is replaced (new-session). In-flight work
+  // captures the value it started under and only writes back if it still
+  // matches, so an aborted run/stream cannot dirty the fresh session.
+  const sessionEpochRef = useRef(0);
   // Authority for "is something already in flight". `status` mirrors it for
   // rendering but state updates are not visible until the next render, so a
   // held-down Enter could otherwise start a second run.
@@ -122,7 +133,7 @@ export function App() {
   const isPaletteOpen = slashMatch !== null;
   const query = slashMatch?.[1] ?? null;
   const matches = useMemo(
-    () => (query === null ? [] : filterCommands(commands, query)),
+    () => (query === null ? [] : filterCommands([...BUILTIN_COMMANDS, ...commands], query)),
     [commands, query],
   );
   const activeIndex = Math.min(selectedIndex, Math.max(matches.length - 1, 0));
@@ -173,6 +184,7 @@ export function App() {
       if (busyRef.current) return;
       busyRef.current = true;
 
+      const epoch = sessionEpochRef.current;
       const id = crypto.randomUUID();
       const controller = new AbortController();
       const startedAt = performance.now();
@@ -227,12 +239,38 @@ export function App() {
           durationMs: Math.round(performance.now() - startedAt),
         }));
       } finally {
+        // A new session already reset this state; leave its work alone.
+        if (sessionEpochRef.current !== epoch) return;
         if (activeRunRef.current?.id === id) activeRunRef.current = null;
         busyRef.current = false;
         setStatus("idle");
       }
     },
     [patchRun],
+  );
+
+  const startNewSession = useCallback(() => {
+    sessionEpochRef.current += 1;
+    activeRunRef.current?.controller.abort();
+    activeRunRef.current = null;
+    streamControllerRef.current?.abort();
+    streamControllerRef.current = null;
+    busyRef.current = false;
+    setEntries([]);
+    setDraft("");
+    setPendingConfirm(null);
+    setPendingParams(null);
+    setParamError(null);
+    setParamFocus(0);
+    setSelectedIndex(0);
+    setStatus("idle");
+  }, []);
+
+  const runBuiltin = useCallback(
+    (name: BuiltinName) => {
+      if (name === "new-session") startNewSession();
+    },
+    [startNewSession],
   );
 
   const proceed = useCallback(
@@ -247,7 +285,11 @@ export function App() {
   );
 
   const requestRun = useCallback(
-    (command: KevCommand) => {
+    (command: PaletteCommand) => {
+      if (isBuiltinCommand(command)) {
+        runBuiltin(command.name);
+        return;
+      }
       if (command.params.length > 0) {
         setPendingParams({
           command,
@@ -260,7 +302,7 @@ export function App() {
       }
       proceed(command, {});
     },
-    [proceed],
+    [proceed, runBuiltin],
   );
 
   const updateParam = useCallback((index: number, value: string) => {
@@ -401,6 +443,10 @@ export function App() {
     if (!prompt || busyRef.current) return;
     busyRef.current = true;
 
+    const epoch = sessionEpochRef.current;
+    const controller = new AbortController();
+    streamControllerRef.current = controller;
+
     const userMsg: UIMessage = {
       id: crypto.randomUUID(),
       role: "user",
@@ -416,24 +462,31 @@ export function App() {
     setStatus("streaming");
 
     try {
-      const result = await streamAssistantResponse(chatMessages(nextEntries));
+      const result = await streamAssistantResponse(chatMessages(nextEntries), controller.signal);
 
       for await (const uiMessage of readUIMessageStream({
         stream: toUIMessageStream({ stream: result.stream }),
         message: assistantMsg,
         terminateOnError: true,
       })) {
+        if (sessionEpochRef.current !== epoch) break;
         updateLastAi(uiMessage);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      updateLastAi({
-        ...assistantMsg,
-        parts: [{ type: "text", text: `Error: ${message}`, state: "done" }],
-      });
+      // A new session aborts the stream; its rejection is not an error to show.
+      if (sessionEpochRef.current === epoch) {
+        const message = error instanceof Error ? error.message : String(error);
+        updateLastAi({
+          ...assistantMsg,
+          parts: [{ type: "text", text: `Error: ${message}`, state: "done" }],
+        });
+      }
     } finally {
-      busyRef.current = false;
-      setStatus("idle");
+      if (streamControllerRef.current === controller) streamControllerRef.current = null;
+      if (sessionEpochRef.current === epoch) {
+        busyRef.current = false;
+        setStatus("idle");
+      }
     }
   };
 
@@ -465,7 +518,7 @@ export function App() {
         {isPaletteOpen ? (
           <CommandPalette
             commands={matches}
-            totalCount={commands.length}
+            totalCount={BUILTIN_COMMANDS.length + commands.length}
             selectedIndex={activeIndex}
             errors={loadErrors}
             confirm={pendingConfirm ? { command: pendingConfirm.command } : null}

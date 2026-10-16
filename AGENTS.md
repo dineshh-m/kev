@@ -60,3 +60,11 @@ The model can create and edit command files, but it can never run one. The split
 - Writes apply immediately; there is no approval step. The y/n gate covers *execution* only.
 - The model supplies the `dangerous` flag and the system prompt asks it to, but nothing enforces that. A script deleting data without the flag will run unconfirmed.
 - The palette re-reads the directory on open (`refreshCommands` in `App.tsx`), so a freshly written command shows up on the next `/` with no extra wiring.
+
+## Built-in commands
+
+Alongside user commands, the palette lists built-in entries that act on the TUI itself rather than running a script. They live in `src/builtins.ts` as `BuiltinCommand` entries (`kind: "builtin"`, no `type` or `script`) and merge with file-backed commands into a `PaletteCommand` union; `App.tsx` pins them first and `isBuiltinCommand` is the discriminant. `CommandPalette` tags them `tui`.
+
+- Built-ins never launch a process and never touch `src/exec.ts` or `src/tools.ts`. Each one has a handler in `App.tsx` (`runBuiltin`), and `requestRun` short-circuits to it before the params/dangerous flow.
+- Their names are reserved: `parseCommandFile` rejects anything in `BUILTIN_NAMES`, so `createCommandFile`/`updateCommandFile` fail for the model and a stray file shows up as a palette load error. The model cannot see built-ins (`listCommands` reads files only) and the system prompt tells it not to create them.
+- `new-session` is the first built-in. It clears the transcript and resets draft/overlays, aborting any in-flight run (`activeRunRef`) or AI stream (`streamControllerRef`). `streamText` receives the controller's `abortSignal`, and a `sessionEpochRef` epoch guard keeps the aborted work from writing an error or partial message into the fresh session.
