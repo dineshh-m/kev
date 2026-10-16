@@ -12,6 +12,14 @@ import {
 import { filterCommands, loadCommands, type KevCommand } from "./commands";
 import { runCommand, type RunData } from "./exec";
 import {
+  listSessions,
+  loadSession,
+  newSessionRecord,
+  saveSession,
+  type SessionSummary,
+  type StoredSession,
+} from "./sessions";
+import {
   chatMessages,
   messageEntry,
   runEntry,
@@ -22,12 +30,14 @@ import Banner from "./components/AsciiBanner";
 import { CommandPalette } from "./components/CommandPalette";
 import { CommandRun } from "./components/CommandRun";
 import { ParamForm } from "./components/ParamForm";
+import { SessionPicker } from "./components/SessionPicker";
 import { Spinner } from "./components/Spinner";
 import { UserMessage } from "./components/UserMessage";
 
 const SLASH_QUERY = /^\/(\S*)$/;
 const OUTPUT_CHAR_BUDGET = 256 * 1024;
 const OUTPUT_MAX_LINES = 200;
+const SAVE_DEBOUNCE_MS = 250;
 
 const THINKING_VERBS = [
   "Unleashing",
@@ -117,9 +127,22 @@ export function App() {
   const [paramFocus, setParamFocus] = useState(0);
   const [paramError, setParamError] = useState<string | null>(null);
   const [thinkingVerb, setThinkingVerb] = useState<string>(() => pickVerb());
+  const [resumeOpen, setResumeOpen] = useState(false);
+  const [resumeSessions, setResumeSessions] = useState<SessionSummary[]>([]);
+  const [resumeIndex, setResumeIndex] = useState(0);
 
   const activeRunRef = useRef<{ id: string; controller: AbortController } | null>(null);
   const streamControllerRef = useRef<AbortController | null>(null);
+  // The disk identity of the transcript on screen: saves append `entries`
+  // under this id, `new-session` rotates it, `resume-session` adopts an
+  // older one.
+  const sessionRef = useRef<StoredSession>(newSessionRecord());
+  // Saves are chained so two overlapping flushes can never land on disk out
+  // of order; the debounce only coalesces how often they are queued. The
+  // latest scheduled snapshot is kept in a ref so a session rotation can
+  // flush it before the transcript it belongs to is replaced.
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingSaveRef = useRef<StoredSession | null>(null);
   // Bumped whenever the transcript is replaced (new-session). In-flight work
   // captures the value it started under and only writes back if it still
   // matches, so an aborted run/stream cannot dirty the fresh session.
@@ -156,6 +179,29 @@ export function App() {
   useEffect(() => {
     if (isPaletteOpen) refreshCommands();
   }, [isPaletteOpen, refreshCommands]);
+
+  const flushSave = useCallback(() => {
+    const snapshot = pendingSaveRef.current;
+    if (!snapshot) return;
+    pendingSaveRef.current = null;
+    saveChainRef.current = saveChainRef.current
+      .then(() => saveSession(snapshot))
+      .catch(() => {});
+  }, []);
+
+  // Persist the transcript under the current session id. Skipped while empty
+  // so merely starting Kev never creates a file; `saveSession` writes via a
+  // temp file + rename, so a crash mid-write cannot tear the session.
+  useEffect(() => {
+    if (entries.length === 0) return;
+    pendingSaveRef.current = {
+      ...sessionRef.current,
+      entries,
+      updatedAt: new Date().toISOString(),
+    };
+    const timer = setTimeout(flushSave, SAVE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [entries, flushSave]);
 
   useEffect(() => {
     return () => {
@@ -249,14 +295,18 @@ export function App() {
     [patchRun],
   );
 
-  const startNewSession = useCallback(() => {
+  // Abort in-flight work and detach the busy latch. The epoch bump makes any
+  // still-running loop notice it belongs to an old session and stop writing.
+  const clearInFlight = useCallback(() => {
     sessionEpochRef.current += 1;
     activeRunRef.current?.controller.abort();
     activeRunRef.current = null;
     streamControllerRef.current?.abort();
     streamControllerRef.current = null;
     busyRef.current = false;
-    setEntries([]);
+  }, []);
+
+  const resetOverlays = useCallback(() => {
     setDraft("");
     setPendingConfirm(null);
     setPendingParams(null);
@@ -266,11 +316,49 @@ export function App() {
     setStatus("idle");
   }, []);
 
+  const startNewSession = useCallback(() => {
+    flushSave();
+    clearInFlight();
+    sessionRef.current = newSessionRecord();
+    setEntries([]);
+    resetOverlays();
+    setResumeOpen(false);
+  }, [clearInFlight, flushSave, resetOverlays]);
+
+  const openResume = useCallback(() => {
+    setDraft("");
+    setResumeIndex(0);
+    setResumeOpen(true);
+    void listSessions()
+      .then(setResumeSessions)
+      .catch(() => setResumeSessions([]));
+  }, []);
+
+  const applyResume = useCallback(
+    async (summary: SessionSummary) => {
+      let session: StoredSession | null = null;
+      try {
+        session = await loadSession(summary.id);
+      } catch {
+        session = null;
+      }
+      setResumeOpen(false);
+      if (!session) return;
+      flushSave();
+      clearInFlight();
+      sessionRef.current = session;
+      setEntries(session.entries);
+      resetOverlays();
+    },
+    [clearInFlight, flushSave, resetOverlays],
+  );
+
   const runBuiltin = useCallback(
     (name: BuiltinName) => {
       if (name === "new-session") startNewSession();
+      if (name === "resume-session") openResume();
     },
-    [startNewSession],
+    [openResume, startNewSession],
   );
 
   const proceed = useCallback(
@@ -392,6 +480,36 @@ export function App() {
         return;
       }
       // Enter is left to the focused input's onSubmit so it advances or runs.
+      return;
+    }
+
+    if (resumeOpen) {
+      if (key.name === "escape") {
+        key.preventDefault();
+        setResumeOpen(false);
+        return;
+      }
+      if (resumeSessions.length === 0) {
+        if (!key.ctrl && !key.meta) key.preventDefault();
+        return;
+      }
+      if (key.name === "up") {
+        key.preventDefault();
+        setResumeIndex((index) => Math.max(index - 1, 0));
+        return;
+      }
+      if (key.name === "down") {
+        key.preventDefault();
+        setResumeIndex((index) => Math.min(index + 1, resumeSessions.length - 1));
+        return;
+      }
+      if (key.name === "return") {
+        key.preventDefault();
+        const picked = resumeSessions[Math.min(resumeIndex, resumeSessions.length - 1)];
+        if (picked) void applyResume(picked);
+        return;
+      }
+      if (!key.ctrl && !key.meta) key.preventDefault();
       return;
     }
 
@@ -535,9 +653,16 @@ export function App() {
             onSubmit={handleParamSubmit}
           />
         ) : null}
+        {resumeOpen ? (
+          <SessionPicker
+            sessions={resumeSessions}
+            selectedIndex={Math.min(resumeIndex, Math.max(resumeSessions.length - 1, 0))}
+            onSelect={(session) => void applyResume(session)}
+          />
+        ) : null}
         <box border borderStyle="rounded" borderColor="#232323" height={3}>
           <input
-            focused={pendingParams === null}
+            focused={pendingParams === null && !resumeOpen}
             width="100%"
             value={draft}
             onInput={setDraft}

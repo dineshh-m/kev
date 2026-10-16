@@ -12,6 +12,11 @@ const definitions = [
     name: "new-session",
     description: "Clear the transcript and start a fresh session",
   },
+  {
+    kind: "builtin",
+    name: "resume-session",
+    description: "Pick a previous session and continue it",
+  },
 ] as const satisfies readonly {
   kind: "builtin";
   name: string;

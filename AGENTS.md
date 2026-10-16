@@ -33,9 +33,10 @@ Components use OpenTUI primitives: `<box>`, `<text>`, `<markdown>`, `<input>`, `
 - `src/commands.ts` — loads `~/.kev/commands/*.md` (YAML frontmatter + raw script body), validates, filters, and creates/updates command files. No React here.
 - `src/exec.ts` — runs a command locally with `Bun.spawn` (stdin ignored, stdout/stderr piped) and streams output back as events. Never invoked by the model.
 - `src/transcript.ts` — the UI transcript as `TranscriptEntry[]`: chat messages and UI-only run entries, plus `chatMessages()` which is what the model gets. No React here.
+- `src/sessions.ts` — persists transcripts as JSON under `~/.kev/sessions/<id>.json`, and repairs cut-short entries on load. No React here.
 - `src/tools.ts` — the tools handed to the model via `streamText`: `readFile` / `listFiles` for project inspection, plus `listCommands` / `readCommand` / `createCommand` / `updateCommand` for authoring commands.
 - `src/theme.ts` — exports `syntaxStyle` (`SyntaxStyle.fromStyles`), consumed by the `<markdown>` component.
-- `src/components/` — presentational components: `AiMessage`, `UserMessage`, `CommandRun`, `CommandPalette`, `Spinner`, `AsciiBanner`.
+- `src/components/` — presentational components: `AiMessage`, `UserMessage`, `CommandRun`, `CommandPalette`, `ParamForm`, `SessionPicker`, `Spinner`, `AsciiBanner`.
 
 ## Command execution
 
@@ -61,10 +62,19 @@ The model can create and edit command files, but it can never run one. The split
 - The model supplies the `dangerous` flag and the system prompt asks it to, but nothing enforces that. A script deleting data without the flag will run unconfirmed.
 - The palette re-reads the directory on open (`refreshCommands` in `App.tsx`), so a freshly written command shows up on the next `/` with no extra wiring.
 
+## Persistence
+
+Sessions are saved to `~/.kev/sessions/<id>.json` so a restart does not lose work. Kev still starts on an empty transcript; a saved session is only loaded explicitly via `resume-session`.
+
+- A `StoredSession` is `{ version, id, cwd, createdAt, updatedAt, entries }` — the whole `TranscriptEntry[]`, runs included, written as-is since both `UIMessage` and `RunData` are plain JSON. `cwd` is recorded only so the picker can show which project a session came from.
+- Saving is a `useEffect` on `entries` in `App.tsx`, debounced (`SAVE_DEBOUNCE_MS`) and skipped while the transcript is empty, so starting Kev never litters the directory. Writes are chained through `saveChainRef` so two flushes cannot land out of order, and `saveSession` writes a `.tmp` then renames, so a crash mid-write cannot tear the file.
+- `loadSession` runs `sanitizeEntries`, the crash-repair pass: a run left `"running"` becomes `"cancelled"`, a text part left `"streaming"` becomes `"done"`, and a tool part still at `input-streaming`/`input-available` is dropped — a dangling tool call would otherwise render as a perpetual spinner and reach `convertToModelMessages` with no result. Terminal tool parts (`output-available`, `output-error`, `output-denied`) are kept.
+- `listSessions` returns summaries (id, cwd, updatedAt, entry count, first-user-text preview) newest-first, skipping corrupt files and sessions with no entries. `resume-session` is the only reader; there is no auto-resume and no delete yet.
+
 ## Built-in commands
 
 Alongside user commands, the palette lists built-in entries that act on the TUI itself rather than running a script. They live in `src/builtins.ts` as `BuiltinCommand` entries (`kind: "builtin"`, no `type` or `script`) and merge with file-backed commands into a `PaletteCommand` union; `App.tsx` pins them first and `isBuiltinCommand` is the discriminant. `CommandPalette` tags them `tui`.
 
 - Built-ins never launch a process and never touch `src/exec.ts` or `src/tools.ts`. Each one has a handler in `App.tsx` (`runBuiltin`), and `requestRun` short-circuits to it before the params/dangerous flow.
 - Their names are reserved: `parseCommandFile` rejects anything in `BUILTIN_NAMES`, so `createCommandFile`/`updateCommandFile` fail for the model and a stray file shows up as a palette load error. The model cannot see built-ins (`listCommands` reads files only) and the system prompt tells it not to create them.
-- `new-session` is the first built-in. It clears the transcript and resets draft/overlays, aborting any in-flight run (`activeRunRef`) or AI stream (`streamControllerRef`). `streamText` receives the controller's `abortSignal`, and a `sessionEpochRef` epoch guard keeps the aborted work from writing an error or partial message into the fresh session.
+- `new-session` clears the transcript and resets draft/overlays; `resume-session` opens the `SessionPicker` overlay and loads a chosen session from disk. Both abort any in-flight run (`activeRunRef`) or AI stream (`streamControllerRef`) through the shared `clearInFlight`, whose `sessionEpochRef` bump keeps the aborted work from writing an error or partial message into the fresh/deferred session. `streamText` receives the controller's `abortSignal`.
