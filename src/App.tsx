@@ -709,10 +709,19 @@ export function App() {
             onSelect={(session) => void applyResume(session)}
           />
         ) : null}
-        <box border borderStyle="rounded" borderColor="#232323" height={3}>
+        <box
+          border
+          borderStyle="rounded"
+          borderColor="#232323"
+          height={3}
+          flexDirection="row"
+          alignItems="center"
+          paddingLeft={1}
+        >
+          <text fg="#7A8A80">❯ </text>
           <input
             focused={pendingParams === null && !resumeOpen && viewDetail === null}
-            width="100%"
+            flexGrow={1}
             value={draft}
             onInput={setDraft}
             placeholder="Ask Kev to create a command or type '/' to search"
