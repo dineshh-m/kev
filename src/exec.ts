@@ -1,4 +1,5 @@
 import { buildParamEnv, type CommandType, type KevCommand } from "./commands";
+import { logError } from "./debug";
 
 export const DEFAULT_TIMEOUT_MS = 120_000;
 
@@ -93,6 +94,7 @@ function readPipe(
           }
         }
       } catch (error) {
+        logError(`exec.readPipe:${name}`, error);
         onEvent({ type: "error", message: `failed reading ${name}: ${errorMessage(error)}` });
       } finally {
         reader.releaseLock();
@@ -140,6 +142,7 @@ export async function* runCommand(
       },
     });
   } catch (error) {
+    logError(`exec.spawn:${command.name}`, error);
     yield { type: "error", message: errorMessage(error) };
     return;
   }
@@ -165,6 +168,7 @@ export async function* runCommand(
   const result = settled as Settled;
 
   if (result.error) {
+    logError(`exec.exit:${command.name}`, result.error);
     yield { type: "error", message: result.error.message };
     return;
   }

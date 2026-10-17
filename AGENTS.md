@@ -36,6 +36,7 @@ Components use OpenTUI primitives: `<box>`, `<text>`, `<markdown>`, `<input>`, `
 - `src/sessions.ts` — persists transcripts as JSON under `~/.kev/sessions/<id>.json`, and repairs cut-short entries on load. No React here.
 - `src/tools.ts` — the tools handed to the model via `streamText`: `readFile` / `listFiles` for project inspection, plus `listCommands` / `readCommand` / `createCommand` / `updateCommand` for authoring commands.
 - `src/theme.ts` — exports `syntaxStyle` (`SyntaxStyle.fromStyles`), consumed by the `<markdown>` component.
+- `src/debug.ts` — the file logger (`log` / `logError`) writing to `~/.kev/kev.log`. No React here.
 - `src/components/` — presentational components: `AiMessage`, `UserMessage`, `CommandRun`, `CommandPalette`, `ParamForm`, `SessionPicker`, `Spinner`, `AsciiBanner`, `HomeHero` (the empty-transcript welcome: framed banner panel, rotating tips, key legend, status line).
 
 ## Command execution
@@ -70,6 +71,15 @@ Sessions are saved to `~/.kev/sessions/<id>.json` so a restart does not lose wor
 - Saving is a `useEffect` on `entries` in `App.tsx`, debounced (`SAVE_DEBOUNCE_MS`) and skipped while the transcript is empty, so starting Kev never litters the directory. Writes are chained through `saveChainRef` so two flushes cannot land out of order, and `saveSession` writes a `.tmp` then renames, so a crash mid-write cannot tear the file.
 - `loadSession` runs `sanitizeEntries`, the crash-repair pass: a run left `"running"` becomes `"cancelled"`, a text part left `"streaming"` becomes `"done"`, and a tool part still at `input-streaming`/`input-available` is dropped — a dangling tool call would otherwise render as a perpetual spinner and reach `convertToModelMessages` with no result. Terminal tool parts (`output-available`, `output-error`, `output-denied`) are kept.
 - `listSessions` returns summaries (id, cwd, updatedAt, entry count, first-user-text preview) newest-first, skipping corrupt files and sessions with no entries. `resume-session` is the only reader; there is no auto-resume and no delete yet.
+
+## Logging
+
+Errors are written to `~/.kev/kev.log` via `src/debug.ts` (`log(message)` and `logError(context, error)`). The TUI owns the terminal, so anything printed to stderr is invisible or corrupts the render — the log file is the durable trail.
+
+- `logError` serializes `Error` to its stack; anything else via `String()`. It is fire-and-forget but safe: writes are chained so they cannot interleave, `log`/`logError` never throw, and a rejected write is swallowed rather than becoming an unhandled rejection.
+- The file rotates to `kev.log.old` once it passes ~1 MB. The directory is created lazily.
+- `src/index.tsx` installs `uncaughtException` (log then exit) and `unhandledRejection` (log and continue) handlers, and logs a failed `createCliRenderer`.
+- Every previously silent `catch {}` — session save/list/load, command load/parse, exec spawn/pipe/exit, the AI stream, and each tool `execute` — now routes through `logError`. Keep new error paths doing the same; a `catch {}` with no log is the bug this replaced.
 
 ## Built-in commands
 

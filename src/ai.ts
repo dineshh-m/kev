@@ -1,7 +1,7 @@
 import { convertToModelMessages, streamText, stepCountIs, type UIMessage } from "ai";
 import { groq } from "@ai-sdk/groq";
 import { KevTools } from "./tools";
-import { log } from "./debug";
+import { logError } from "./debug";
 
 export const SYSTEM_PROMPT = `You are Kev, an AI assistant embedded in a CLI development tool. You help users build commands for their CLI applications.
 
@@ -29,13 +29,14 @@ Always set \`dangerous: true\` when a script deletes or overwrites data, rewrite
 
 After a write, report what you saved in one line — name and what it does. Never claim a command was created or changed unless the tool call succeeded.`;
 
-export const MODEL_ID = "qwen/qwen3.8-27b";
+// export const MODEL_ID = "qwen/qwen3.8-27b";
+export const MODEL_ID = "openai/gpt-oss-20b";
 
 const MAX_STEPS = 20;
 
 export async function streamAssistantResponse(messages: UIMessage[], signal?: AbortSignal) {
   const modelMessages = await convertToModelMessages(messages, { tools: KevTools });
-  log(`Messages: ${JSON.stringify(messages)}`)
+  // log(`Messages: ${JSON.stringify(messages)}`)
   return streamText({
     // model: groq("openai/gpt-oss-20b"),
     model: groq(MODEL_ID),
@@ -45,5 +46,6 @@ export async function streamAssistantResponse(messages: UIMessage[], signal?: Ab
     stopWhen: stepCountIs(MAX_STEPS),
     messages: modelMessages,
     abortSignal: signal,
+    onError: (error) => logError("streamText", error),
   });
 }

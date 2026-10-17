@@ -8,6 +8,7 @@ import {
   readCommandFile,
   updateCommandFile,
 } from "./commands";
+import { logError } from "./debug";
 
 function resolvePath(path: string): string {
   return isAbsolute(path) ? path : resolve(process.cwd(), path);
@@ -88,21 +89,26 @@ export const KevTools: ToolSet = {
       required: ["path"],
     }),
     execute: async ({ path, startLine, endLine }) => {
-      const absolute = resolvePath(path);
-      const info = await stat(absolute);
-      if (!info.isFile()) throw new Error(`${absolute} is not a file`);
-      const lines = (await readFile(absolute, "utf8")).split("\n");
-      const totalLines = lines.length;
-      const from = Math.max(1, startLine ?? 1);
-      const to = Math.min(totalLines, endLine ?? totalLines);
-      return {
-        filename: absolute,
-        sizeBytes: info.size,
-        totalLines,
-        lineStart: from,
-        lineEnd: to,
-        content: lines.slice(from - 1, to).join("\n"),
-      };
+      try {
+        const absolute = resolvePath(path);
+        const info = await stat(absolute);
+        if (!info.isFile()) throw new Error(`${absolute} is not a file`);
+        const lines = (await readFile(absolute, "utf8")).split("\n");
+        const totalLines = lines.length;
+        const from = Math.max(1, startLine ?? 1);
+        const to = Math.min(totalLines, endLine ?? totalLines);
+        return {
+          filename: absolute,
+          sizeBytes: info.size,
+          totalLines,
+          lineStart: from,
+          lineEnd: to,
+          content: lines.slice(from - 1, to).join("\n"),
+        };
+      } catch (error) {
+        logError("tool.readFile", error);
+        throw error;
+      }
     },
   }),
 
@@ -120,31 +126,37 @@ export const KevTools: ToolSet = {
       required: ["path"],
     }),
     execute: async ({ path }) => {
-      const absolute = resolvePath(path);
-      const info = await stat(absolute);
-      if (!info.isDirectory()) throw new Error(`${absolute} is not a directory`);
-      const entries = await readdir(absolute, { withFileTypes: true });
-      const list = await Promise.all(
-        entries.map(async (entry) => {
-          let sizeBytes = 0;
-          if (entry.isFile()) {
-            try {
-              sizeBytes = (await stat(join(absolute, entry.name))).size;
-            } catch {
-              sizeBytes = 0;
+      try {
+        const absolute = resolvePath(path);
+        const info = await stat(absolute);
+        if (!info.isDirectory()) throw new Error(`${absolute} is not a directory`);
+        const entries = await readdir(absolute, { withFileTypes: true });
+        const list = await Promise.all(
+          entries.map(async (entry) => {
+            let sizeBytes = 0;
+            if (entry.isFile()) {
+              try {
+                sizeBytes = (await stat(join(absolute, entry.name))).size;
+              } catch (error) {
+                logError(`tool.listFiles:${entry.name}`, error);
+                sizeBytes = 0;
+              }
             }
-          }
-          return { name: entry.name, isDirectory: entry.isDirectory(), sizeBytes };
-        }),
-      );
-      list.sort((a, b) =>
-        a.isDirectory === b.isDirectory
-          ? a.name.localeCompare(b.name)
-          : a.isDirectory
-            ? -1
-            : 1,
-      );
-      return { path: absolute, entries: list };
+            return { name: entry.name, isDirectory: entry.isDirectory(), sizeBytes };
+          }),
+        );
+        list.sort((a, b) =>
+          a.isDirectory === b.isDirectory
+            ? a.name.localeCompare(b.name)
+            : a.isDirectory
+              ? -1
+              : 1,
+        );
+        return { path: absolute, entries: list };
+      } catch (error) {
+        logError("tool.listFiles", error);
+        throw error;
+      }
     },
   }),
 
@@ -157,17 +169,22 @@ export const KevTools: ToolSet = {
       additionalProperties: false,
     }),
     execute: async () => {
-      const { commands, errors } = await loadCommands();
-      return {
-        commands: commands.map(({ name, description, type, dangerous, params }) => ({
-          name,
-          description,
-          type,
-          dangerous,
-          params: params.map((param) => param.name),
-        })),
-        errors,
-      };
+      try {
+        const { commands, errors } = await loadCommands();
+        return {
+          commands: commands.map(({ name, description, type, dangerous, params }) => ({
+            name,
+            description,
+            type,
+            dangerous,
+            params: params.map((param) => param.name),
+          })),
+          errors,
+        };
+      } catch (error) {
+        logError("tool.listCommands", error);
+        throw error;
+      }
     },
   }),
 
@@ -181,16 +198,21 @@ export const KevTools: ToolSet = {
       additionalProperties: false,
     }),
     execute: async ({ name }) => {
-      const command = await readCommandFile(name);
-      return {
-        name: command.name,
-        description: command.description,
-        type: command.type,
-        dangerous: command.dangerous,
-        params: command.params,
-        script: command.script,
-        path: command.path,
-      };
+      try {
+        const command = await readCommandFile(name);
+        return {
+          name: command.name,
+          description: command.description,
+          type: command.type,
+          dangerous: command.dangerous,
+          params: command.params,
+          script: command.script,
+          path: command.path,
+        };
+      } catch (error) {
+        logError("tool.readCommand", error);
+        throw error;
+      }
     },
   }),
 
@@ -215,8 +237,13 @@ export const KevTools: ToolSet = {
       additionalProperties: false,
     }),
     execute: async ({ name, description, type, script, dangerous, params }) => {
-      const command = await createCommandFile({ name, description, type, script, dangerous, params });
-      return { name: command.name, path: command.path, created: true };
+      try {
+        const command = await createCommandFile({ name, description, type, script, dangerous, params });
+        return { name: command.name, path: command.path, created: true };
+      } catch (error) {
+        logError("tool.createCommand", error);
+        throw error;
+      }
     },
   }),
 
@@ -240,15 +267,20 @@ export const KevTools: ToolSet = {
       additionalProperties: false,
     }),
     execute: async ({ name, description, type, script, dangerous, params }) => {
-      const { command, changed } = await updateCommandFile({
-        name,
-        ...(description === undefined ? {} : { description }),
-        ...(type === undefined ? {} : { type }),
-        ...(script === undefined ? {} : { script }),
-        ...(dangerous === undefined ? {} : { dangerous }),
-        ...(params === undefined ? {} : { params }),
-      });
-      return { name: command.name, path: command.path, updated: true, changed };
+      try {
+        const { command, changed } = await updateCommandFile({
+          name,
+          ...(description === undefined ? {} : { description }),
+          ...(type === undefined ? {} : { type }),
+          ...(script === undefined ? {} : { script }),
+          ...(dangerous === undefined ? {} : { dangerous }),
+          ...(params === undefined ? {} : { params }),
+        });
+        return { name: command.name, path: command.path, updated: true, changed };
+      } catch (error) {
+        logError("tool.updateCommand", error);
+        throw error;
+      }
     },
   }),
 };

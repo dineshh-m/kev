@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { isToolUIPart, type UIMessage } from "ai";
+import { logError } from "./debug";
 import type { TranscriptEntry } from "./transcript";
 
 export const SESSIONS_DIR = join(homedir(), ".kev", "sessions");
@@ -131,7 +132,11 @@ export async function loadSession(id: string, dir: string = SESSIONS_DIR): Promi
     return parseStoredSession(id, await readFile(sessionPath(id, dir), "utf8"));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    if (error instanceof SyntaxError) return null;
+    if (error instanceof SyntaxError) {
+      logError(`loadSession:${id}`, error);
+      return null;
+    }
+    logError(`loadSession:${id}`, error);
     throw error;
   }
 }
@@ -155,7 +160,10 @@ export async function listSessions(dir: string = SESSIONS_DIR): Promise<SessionS
   let files: string[];
   try {
     files = await readdir(dir);
-  } catch {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      logError(`listSessions:${dir}`, error);
+    }
     return [];
   }
 
@@ -173,8 +181,9 @@ export async function listSessions(dir: string = SESSIONS_DIR): Promise<SessionS
         entryCount: session.entries.length,
         preview: previewOf(session.entries),
       });
-    } catch {
+    } catch (error) {
       // Corrupt file: leave it on disk, keep listing the rest.
+      logError(`listSessions:${file}`, error);
     }
   }
 

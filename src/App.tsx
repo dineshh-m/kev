@@ -10,6 +10,7 @@ import {
   type PaletteCommand,
 } from "./builtins";
 import { filterCommands, loadCommands, type KevCommand } from "./commands";
+import { logError } from "./debug";
 import { runCommand, type RunData } from "./exec";
 import {
   listSessions,
@@ -162,10 +163,12 @@ export function App() {
   const activeIndex = Math.min(selectedIndex, Math.max(matches.length - 1, 0));
 
   const refreshCommands = useCallback(() => {
-    void loadCommands().then((result) => {
-      setCommands(result.commands);
-      setLoadErrors(result.errors);
-    });
+    void loadCommands()
+      .then((result) => {
+        setCommands(result.commands);
+        setLoadErrors(result.errors);
+      })
+      .catch((error) => logError("loadCommands", error));
   }, []);
 
   useEffect(() => {
@@ -186,7 +189,7 @@ export function App() {
     pendingSaveRef.current = null;
     saveChainRef.current = saveChainRef.current
       .then(() => saveSession(snapshot))
-      .catch(() => {});
+      .catch((error) => logError("saveSession", error));
   }, []);
 
   // Persist the transcript under the current session id. Skipped while empty
@@ -259,6 +262,7 @@ export function App() {
           }
 
           if (event.type === "error") {
+            logError(`run:${command.name}`, event.message);
             patchRun(id, (run) => ({
               ...run,
               status: "error",
@@ -277,6 +281,7 @@ export function App() {
           }));
         }
       } catch (error) {
+        logError(`run:${command.name}`, error);
         patchRun(id, (run) => ({
           ...run,
           status: "error",
@@ -331,7 +336,10 @@ export function App() {
     setResumeOpen(true);
     void listSessions()
       .then(setResumeSessions)
-      .catch(() => setResumeSessions([]));
+      .catch((error) => {
+        logError("listSessions", error);
+        setResumeSessions([]);
+      });
   }, []);
 
   const applyResume = useCallback(
@@ -339,7 +347,8 @@ export function App() {
       let session: StoredSession | null = null;
       try {
         session = await loadSession(summary.id);
-      } catch {
+      } catch (error) {
+        logError(`loadSession:${summary.id}`, error);
         session = null;
       }
       setResumeOpen(false);
@@ -593,6 +602,7 @@ export function App() {
     } catch (error) {
       // A new session aborts the stream; its rejection is not an error to show.
       if (sessionEpochRef.current === epoch) {
+        logError("streamAssistantResponse", error);
         const message = error instanceof Error ? error.message : String(error);
         updateLastAi({
           ...assistantMsg,

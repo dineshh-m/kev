@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { BUILTIN_NAMES } from "./builtins";
+import { logError } from "./debug";
 
 export const COMMANDS_DIR = join(homedir(), ".kev", "commands");
 
@@ -253,7 +254,11 @@ export async function loadCommands(dir: string = COMMANDS_DIR): Promise<LoadedCo
   let entries: string[];
   try {
     entries = await readdir(dir);
-  } catch {
+  } catch (error) {
+    // A missing commands dir is normal; anything else is worth recording.
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      logError(`loadCommands:${dir}`, error);
+    }
     return { commands: [], errors: [] };
   }
 
@@ -264,6 +269,7 @@ export async function loadCommands(dir: string = COMMANDS_DIR): Promise<LoadedCo
       try {
         return { command: parseCommandFile(path, await readFile(path, "utf8")) };
       } catch (error) {
+        logError(`loadCommands:${file}`, error);
         const reason = error instanceof Error ? error.message : String(error);
         return { error: `${file}: ${reason}` };
       }
@@ -318,6 +324,7 @@ export async function readCommandFile(name: string, dir: string = COMMANDS_DIR):
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       throw new Error(`no command named "${name}" in ${dir}`);
     }
+    logError(`readCommandFile:${name}`, error);
     throw error;
   }
 }
