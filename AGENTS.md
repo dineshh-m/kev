@@ -29,7 +29,8 @@ Components use OpenTUI primitives: `<box>`, `<text>`, `<markdown>`, `<input>`, `
 
 - `src/index.tsx` — entrypoint; wires `createCliRenderer` + `createRoot` from `@opentui/core`/`@opentui/react`.
 - `src/App.tsx` — chat UI state: message list, input draft, the `/` command palette wiring, and command execution.
-- `src/ai.ts` — streams assistant replies via the AI SDK (`streamText` with the Groq provider). No DOM or React here.
+- `src/ai.ts` — streams assistant replies via the AI SDK (`streamText` with an OpenAI-compatible provider). No DOM or React here.
+- `src/config.ts` — resolves the provider config (`~/.kev/config.json`, `KEV_*` overrides) into a `ProviderConfig`; `getModelLabel` for the status line. No React here.
 - `src/commands.ts` — loads `~/.kev/commands/*.md` (YAML frontmatter + raw script body), validates, filters, and creates/updates command files. No React here.
 - `src/exec.ts` — runs a command locally with `Bun.spawn` (stdin ignored, stdout/stderr piped) and streams output back as events. Never invoked by the model.
 - `src/transcript.ts` — the UI transcript as `TranscriptEntry[]`: chat messages and UI-only run entries, plus `chatMessages()` which is what the model gets. No React here.
@@ -81,6 +82,16 @@ Errors are written to `~/.kev/kev.log` via `src/debug.ts` (`log(message)` and `l
 - The file rotates to `kev.log.old` once it passes ~1 MB. The directory is created lazily.
 - `src/index.tsx` installs `uncaughtException` (log then exit) and `unhandledRejection` (log and continue) handlers, and logs a failed `createCliRenderer`.
 - Every previously silent `catch {}` — session save/list/load, command load/parse, exec spawn/pipe/exit, the AI stream, and each tool `execute` — now routes through `logError`. Keep new error paths doing the same; a `catch {}` with no log is the bug this replaced.
+
+## Provider configuration
+
+The model endpoint is configured, not hardcoded. `src/config.ts` resolves it into a `ProviderConfig` and `src/ai.ts` builds an OpenAI-compatible provider from it with `createOpenAICompatible` (`@ai-sdk/openai-compatible`) — there is no per-provider package any more (`@ai-sdk/groq` was removed).
+
+- Source of truth is `~/.kev/config.json`: `{ providerName, baseURL, model, apiKeyEnv }`, all optional. With no file, `DEFAULT_PROVIDER_CONFIG` gives the original Groq behavior, so an existing install is unchanged.
+- Precedence, lowest to highest: built-in default → `config.json` → `KEV_*` env vars (`KEV_PROVIDER`, `KEV_BASE_URL`, `KEV_MODEL`, `KEV_API_KEY_ENV`, `KEV_API_KEY`). The key itself resolves as `env[apiKeyEnv]`, then `KEV_API_KEY`, then an inline `apiKey`; a missing key is allowed (Ollama needs none) and only fails at request time.
+- `resolveProviderConfig({ path, env })` is pure and sync (no async, so the hero can read it) and throws a descriptive `Error` for malformed JSON, a non-object file, a bad field type, or a non-http(s) `baseURL`. `getProviderConfig()` memoizes it for the process, logs a failure once through `logError`, and rethrows with context — the chat surfaces that message. Editing the file therefore requires a restart.
+- `getModelLabel()` derives the status-line name from `model` and never throws (falls back to `"no model"`); `HomeHero` uses it instead of importing a model id from `ai.ts`.
+- Keep secrets out of the config file: name the env var in `apiKeyEnv` rather than pasting a key.
 
 ## Built-in commands
 

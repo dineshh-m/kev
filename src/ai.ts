@@ -1,5 +1,6 @@
 import { convertToModelMessages, streamText, stepCountIs, type UIMessage } from "ai";
-import { groq } from "@ai-sdk/groq";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { getProviderConfig } from "./config";
 import { KevTools } from "./tools";
 import { logError } from "./debug";
 
@@ -29,18 +30,28 @@ Always set \`dangerous: true\` when a script deletes or overwrites data, rewrite
 
 After a write, report what you saved in one line — name and what it does. Never claim a command was created or changed unless the tool call succeeded.`;
 
-export const MODEL_ID = "qwen/qwen3.8-27b";
-// export const MODEL_ID = "openai/gpt-oss-20b";
-
 const MAX_STEPS = 20;
+
+/**
+ * Build the chat model from the resolved provider config (~/.kev/config.json,
+ * overridden by KEV_* env vars). Every provider is OpenAI-compatible, so this
+ * is just an endpoint plus a key plus a model id.
+ */
+function languageModel() {
+  const config = getProviderConfig();
+  const provider = createOpenAICompatible({
+    name: config.providerName,
+    baseURL: config.baseURL,
+    apiKey: config.apiKey,
+  });
+  return provider(config.model);
+}
 
 export async function streamAssistantResponse(messages: UIMessage[], signal?: AbortSignal) {
   const modelMessages = await convertToModelMessages(messages, { tools: KevTools });
   // log(`Messages: ${JSON.stringify(messages)}`)
   return streamText({
-    // model: groq("openai/gpt-oss-20b"),
-    model: groq(MODEL_ID),
-    // model: groq("meta-models/muse-spark-open"),
+    model: languageModel(),
     system: SYSTEM_PROMPT,
     tools: KevTools,
     stopWhen: stepCountIs(MAX_STEPS),

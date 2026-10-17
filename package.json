@@ -14,10 +14,10 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@ai-sdk/groq": "^4.0.39",
+    "@ai-sdk/openai-compatible": "^3.0.71",
     "@opentui/core": "^0.5.10",
     "@opentui/react": "^0.5.10",
-    "ai": "^7.0.96",
+    "ai": "^7.0.143",
     "react": "^19.2.8"
   },
   "engines": {

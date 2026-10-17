@@ -1,6 +1,6 @@
 import { TextAttributes } from "@opentui/core";
 import { useEffect, useState } from "react";
-import { MODEL_ID } from "../ai";
+import { getModelLabel } from "../config";
 import Banner from "./AsciiBanner";
 
 const TAGLINE = "Your terminal AI assistant — ask Kev to craft a command.";
@@ -18,7 +18,7 @@ const TIPS = [
 
 const TIP_INTERVAL_MS = 4200;
 
-const MODEL_LABEL = MODEL_ID.split("/").pop() ?? MODEL_ID;
+const MODEL_LABEL = getModelLabel();
 
 function centerPad(value: string): string {
   if (value.length >= TIP_WIDTH) return value;
