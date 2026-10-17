@@ -123,8 +123,8 @@ export function CommandPalette({
             confirm
               ? `/${confirm.command.name} is marked dangerous — y to run, any other key to cancel`
               : errors.length > 0
-                ? `↑↓ select · enter run · esc close · ⚠ ${errors.length} skipped: ${errors[0]}`
-                : "↑↓ select · enter run · esc close",
+                ? `↑↓ select · enter run · ctrl+k detail · esc close · ⚠ ${errors.length} skipped: ${errors[0]}`
+                : "↑↓ select · enter run · ctrl+k detail · esc close",
             Math.max(width - 12, 12),
           )}
         </text>

@@ -28,6 +28,7 @@ import {
 } from "./transcript";
 import { AiMessage } from "./components/AiMessage";
 import { CommandPalette } from "./components/CommandPalette";
+import { CommandDetail } from "./components/CommandDetail";
 import { CommandRun } from "./components/CommandRun";
 import { HomeHero } from "./components/HomeHero";
 import { ParamForm } from "./components/ParamForm";
@@ -131,6 +132,9 @@ export function App() {
   const [resumeOpen, setResumeOpen] = useState(false);
   const [resumeSessions, setResumeSessions] = useState<SessionSummary[]>([]);
   const [resumeIndex, setResumeIndex] = useState(0);
+  // Read-only detail overlay for the palette entry under the cursor (ctrl+k).
+  const [viewDetail, setViewDetail] = useState<PaletteCommand | null>(null);
+  const [detailScroll, setDetailScroll] = useState(0);
 
   const activeRunRef = useRef<{ id: string; controller: AbortController } | null>(null);
   const streamControllerRef = useRef<AbortController | null>(null);
@@ -319,6 +323,8 @@ export function App() {
     setParamFocus(0);
     setSelectedIndex(0);
     setStatus("idle");
+    setViewDetail(null);
+    setDetailScroll(0);
   }, []);
 
   const startNewSession = useCallback(() => {
@@ -522,6 +528,26 @@ export function App() {
       return;
     }
 
+    if (viewDetail) {
+      if (key.name === "escape" || (key.ctrl && key.name === "k")) {
+        key.preventDefault();
+        setViewDetail(null);
+        return;
+      }
+      if (key.name === "up") {
+        key.preventDefault();
+        setDetailScroll((offset) => Math.max(offset - 1, 0));
+        return;
+      }
+      if (key.name === "down") {
+        key.preventDefault();
+        setDetailScroll((offset) => offset + 1);
+        return;
+      }
+      if (!key.ctrl && !key.meta) key.preventDefault();
+      return;
+    }
+
     if (key.name === "escape") {
       key.preventDefault();
       if (activeRunRef.current) {
@@ -533,6 +559,16 @@ export function App() {
     }
 
     if (!isPaletteOpen) return;
+
+    if (key.ctrl && key.name === "k") {
+      key.preventDefault();
+      const command = matches[activeIndex];
+      if (command) {
+        setDetailScroll(0);
+        setViewDetail(command);
+      }
+      return;
+    }
 
     if (key.name === "up") {
       key.preventDefault();
@@ -645,7 +681,7 @@ export function App() {
         )}
       </box>
       <box position="relative" flexShrink={0}>
-        {isPaletteOpen ? (
+        {isPaletteOpen && !viewDetail ? (
           <CommandPalette
             commands={matches}
             totalCount={BUILTIN_COMMANDS.length + commands.length}
@@ -655,6 +691,7 @@ export function App() {
             onSelect={requestRun}
           />
         ) : null}
+        {viewDetail ? <CommandDetail command={viewDetail} scroll={detailScroll} /> : null}
         {pendingParams ? (
           <ParamForm
             command={pendingParams.command}
@@ -674,7 +711,7 @@ export function App() {
         ) : null}
         <box border borderStyle="rounded" borderColor="#232323" height={3}>
           <input
-            focused={pendingParams === null && !resumeOpen}
+            focused={pendingParams === null && !resumeOpen && viewDetail === null}
             width="100%"
             value={draft}
             onInput={setDraft}

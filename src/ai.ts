@@ -29,8 +29,8 @@ Always set \`dangerous: true\` when a script deletes or overwrites data, rewrite
 
 After a write, report what you saved in one line — name and what it does. Never claim a command was created or changed unless the tool call succeeded.`;
 
-// export const MODEL_ID = "qwen/qwen3.8-27b";
-export const MODEL_ID = "openai/gpt-oss-20b";
+export const MODEL_ID = "qwen/qwen3.8-27b";
+// export const MODEL_ID = "openai/gpt-oss-20b";
 
 const MAX_STEPS = 20;
 

@@ -37,7 +37,7 @@ Components use OpenTUI primitives: `<box>`, `<text>`, `<markdown>`, `<input>`, `
 - `src/tools.ts` — the tools handed to the model via `streamText`: `readFile` / `listFiles` for project inspection, plus `listCommands` / `readCommand` / `createCommand` / `updateCommand` for authoring commands.
 - `src/theme.ts` — exports `syntaxStyle` (`SyntaxStyle.fromStyles`), consumed by the `<markdown>` component.
 - `src/debug.ts` — the file logger (`log` / `logError`) writing to `~/.kev/kev.log`. No React here.
-- `src/components/` — presentational components: `AiMessage`, `UserMessage`, `CommandRun`, `CommandPalette`, `ParamForm`, `SessionPicker`, `Spinner`, `AsciiBanner`, `HomeHero` (the empty-transcript welcome: framed banner panel, rotating tips, key legend, status line).
+- `src/components/` — presentational components: `AiMessage`, `UserMessage`, `CommandRun`, `CommandPalette`, `CommandDetail`, `ParamForm`, `SessionPicker`, `Spinner`, `AsciiBanner`, `HomeHero` (the empty-transcript welcome: framed banner panel, rotating tips, key legend, status line).
 
 ## Command execution
 
@@ -62,6 +62,7 @@ The model can create and edit command files, but it can never run one. The split
 - Writes apply immediately; there is no approval step. The y/n gate covers *execution* only.
 - The model supplies the `dangerous` flag and the system prompt asks it to, but nothing enforces that. A script deleting data without the flag will run unconfirmed.
 - The palette re-reads the directory on open (`refreshCommands` in `App.tsx`), so a freshly written command shows up on the next `/` with no extra wiring.
+- With the palette open, `ctrl+k` opens a read-only detail overlay (`CommandDetail`, backed by `viewDetail`/`detailScroll` in `App.tsx`) for the highlighted entry: name, description, type, dangerous flag, params and script body. `↑/↓` scrolls a script that does not fit; `esc` or `ctrl+k` returns to the palette (the draft is untouched, so the palette is still there). It works for builtins too — they show a note instead of type/params/script. Nothing runs from this overlay.
 
 ## Persistence
 
