@@ -2,6 +2,7 @@ import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { App } from "./App";
 import { logError } from "./debug";
+import { setTerminalTitle } from "./terminal";
 
 process.on("uncaughtException", (error) => {
   logError("uncaughtException", error);
@@ -11,6 +12,8 @@ process.on("uncaughtException", (error) => {
 process.on("unhandledRejection", (error) => {
   logError("unhandledRejection", error);
 });
+
+setTerminalTitle("Kev");
 
 let renderer;
 try {
