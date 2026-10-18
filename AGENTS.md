@@ -8,6 +8,8 @@ Bun >= 1.3.0 required. Do not use Node or npm. Bun auto-loads `.env`; copy `.env
 
 - `bun dev` — run in watch mode (`bun run --watch src/index.tsx`)
 - `bun run typecheck` — type-check only (`tsc --noEmit`)
+- `bun run build` — standalone binary for the host platform (`bun build --compile src/index.tsx --outfile dist/kev`)
+- `bun run build:release` — runs `scripts/build-release.ts`: cross-compiles all five release targets (linux/darwin x64+arm64, windows x64) into versioned `dist/` archives plus `SHA256SUMS`. It runs `bun install --frozen-lockfile --os/--cpu` per target first — OpenTUI's native lib ships as per-platform optionalDependencies, and cross-builds fail to resolve `@opentui/core-<platform>` without them. It also wipes `dist/`, so don't keep anything there.
 - `bun test` — unit tests for the non-React modules (`commands.ts`, `exec.ts`). The TUI itself has no headless test path.
 
 ## Skill
@@ -27,7 +29,9 @@ Components use OpenTUI primitives: `<box>`, `<text>`, `<markdown>`, `<input>`, `
 
 ## Source layout
 
-- `src/index.tsx` — entrypoint; wires `createCliRenderer` + `createRoot` from `@opentui/core`/`@opentui/react`.
+- `src/index.tsx` — entrypoint; handles `--version` / `--help` before the TUI starts (version comes from `package.json`, the single source of truth), then wires `createCliRenderer` + `createRoot` from `@opentui/core`/`@opentui/react`.
+- `scripts/build-release.ts` — the release builder (see Commands). No React here.
+- `.github/workflows/ci.yml` — typecheck + test + native build + `--version` smoke test on every push/PR. `.github/workflows/release.yml` — on a `v*` tag: same tests, full `build:release`, then a GitHub release with the archives and `SHA256SUMS`; it rejects a tag that disagrees with `package.json`'s version.
 - `src/App.tsx` — chat UI state: message list, input draft, the `/` command palette wiring, and command execution.
 - `src/ai.ts` — streams assistant replies via the AI SDK (`streamText` with an OpenAI-compatible provider). No DOM or React here.
 - `src/config.ts` — resolves the provider config (`~/.kev/config.json`, `KEV_*` overrides) into a `ProviderConfig`; `getModelLabel` for the status line. No React here.

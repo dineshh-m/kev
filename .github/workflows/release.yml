@@ -1,0 +1,117 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun test
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build all release archives
+        run: bun run build:release
+
+      - name: Smoke test the linux binary
+        run: |
+          tar -xzf dist/kev-v*-linux-x64.tar.gz -C /tmp
+          /tmp/kev --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-archives
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-archives
+          path: dist
+
+      - name: Verify tag matches package.json version
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "v$PKG_VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version v$PKG_VERSION" >&2
+            exit 1
+          fi
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body: |
+            ## Install
+
+            Download the archive for your platform, extract it, and put `kev` on your `PATH`:
+
+            | Platform | Archive |
+            | --- | --- |
+            | Linux x64 | `kev-${{ github.ref_name }}-linux-x64.tar.gz` |
+            | Linux arm64 | `kev-${{ github.ref_name }}-linux-arm64.tar.gz` |
+            | macOS Apple Silicon | `kev-${{ github.ref_name }}-darwin-arm64.tar.gz` |
+            | macOS Intel | `kev-${{ github.ref_name }}-darwin-x64.tar.gz` |
+            | Windows x64 (experimental) | `kev-${{ github.ref_name }}-windows-x64.zip` |
+
+            ```bash
+            mkdir -p ~/.local/bin
+            tar -xzf kev-${{ github.ref_name }}-linux-x64.tar.gz -C ~/.local/bin
+            kev --version
+            ```
+
+            Verify the download against `SHA256SUMS`:
+
+            ```bash
+            sha256sum -c SHA256SUMS --ignore-missing
+            ```
+
+            macOS builds are unsigned (ad-hoc signed by Bun); if Gatekeeper
+            complains, run `xattr -d com.apple.quarantine kev`.
+
+            Kev needs no config to start (Groq defaults); see the README to
+            point it at another OpenAI-compatible provider.
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS

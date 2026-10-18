@@ -1,4 +1,35 @@
-# react
+# kev
+
+A terminal AI assistant built with [OpenTUI](https://github.com/anomalyco/opentui)
+and the [AI SDK](https://ai-sdk.dev). Chat with any OpenAI-compatible provider
+from a TUI, run custom slash commands, and pick up where you left off — sessions
+persist under `~/.kev/sessions`.
+
+## Install
+
+Prebuilt binaries for Linux, macOS, and Windows (x64 + arm64) ship with every
+[GitHub release](https://github.com/dineshh-m/kev/releases). Download the
+archive for your platform, extract it, and put `kev` on your `PATH`:
+
+```bash
+mkdir -p ~/.local/bin
+tar -xzf kev-v0.1.0-linux-x64.tar.gz -C ~/.local/bin
+kev --version
+```
+
+Available archives: `kev-<version>-linux-x64`, `linux-arm64`, `darwin-x64`,
+`darwin-arm64` (`.tar.gz`) and `kev-<version>-windows-x64.zip` (experimental).
+Each release includes a `SHA256SUMS` file — verify with
+`sha256sum -c SHA256SUMS --ignore-missing`.
+
+macOS builds are unsigned (ad-hoc signed by Bun). If Gatekeeper complains about
+a downloaded binary, run `xattr -d com.apple.quarantine kev`.
+
+The Groq default needs an API key; copy `.env.example` to `.env` in your working
+directory and set it (Bun loads it automatically), or export the variable in
+your shell.
+
+## Run from source
 
 Requires [Bun](https://bun.sh/) 1.3.0 or later.
 
@@ -18,6 +49,12 @@ To typecheck:
 
 ```bash
 bun run typecheck
+```
+
+To build a standalone binary for your current platform:
+
+```bash
+bun run build
 ```
 
 ## Provider configuration
@@ -56,7 +93,24 @@ Examples:
   "model": "llama3.3:70b" }
 ```
 
-Copy `.env.example` to `.env` and set the key for your provider; Bun loads it
-automatically.
+## Releasing (maintainers)
+
+CI (`.github/workflows/ci.yml`) typechecks, tests, and smoke-builds on every
+push and PR. A release is cut from a tag:
+
+1. Bump `version` in `package.json` (single source of truth — the binary's
+   `--version` reads it, and CI rejects a tag that disagrees with it).
+2. Commit, then tag and push:
+
+   ```bash
+   git tag v0.1.0
+   git push origin v0.1.0
+   ```
+
+3. `.github/workflows/release.yml` runs the tests, cross-compiles all five
+   targets (`bun run build:release` — archives + `SHA256SUMS`), smoke-tests the
+   Linux binary, and publishes a GitHub release with the archives attached.
+
+`workflow_dispatch` runs the same build without publishing, for dry runs.
 
 This project was created using `bun create tui`. [create-tui](https://github.com/msmps/create-tui) is the easiest way to get started with OpenTUI.
