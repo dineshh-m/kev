@@ -29,3 +29,53 @@ jobs:
 
       - name: Smoke test
         run: ./dist/kev --version
+
+  install-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build release archives
+        run: bun run build:release
+
+      - name: Lint the installer
+        run: shellcheck scripts/install.sh
+
+      - name: Install from a mock release server
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          mkdir -p /tmp/mock-release/v$VERSION
+          cp dist/kev-v$VERSION-*.tar.gz dist/SHA256SUMS /tmp/mock-release/v$VERSION/
+          python3 -m http.server 8377 --directory /tmp/mock-release &
+          SERVER=$!
+          sleep 1
+          KEV_VERSION=v$VERSION \
+          KEV_INSTALL_BASE_URL=http://localhost:8377 \
+          KEV_INSTALL_DIR=/tmp/kev-install \
+            bash scripts/install.sh
+          /tmp/kev-install/kev --version | grep -qx "$VERSION"
+          kill $SERVER
+
+      - name: Reject a corrupted archive
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          printf 'corrupt' >> /tmp/mock-release/v$VERSION/kev-v$VERSION-linux-x64.tar.gz
+          python3 -m http.server 8378 --directory /tmp/mock-release &
+          SERVER=$!
+          sleep 1
+          if KEV_VERSION=v$VERSION \
+             KEV_INSTALL_BASE_URL=http://localhost:8378 \
+             KEV_INSTALL_DIR=/tmp/kev-install-corrupt \
+               bash scripts/install.sh; then
+            echo "installer accepted a corrupted archive" >&2
+            exit 1
+          fi
+          test ! -e /tmp/kev-install-corrupt/kev
+          kill $SERVER

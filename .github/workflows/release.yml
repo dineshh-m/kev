@@ -54,6 +54,7 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*.zip
+            dist/install.sh
             dist/SHA256SUMS
           if-no-files-found: error
 
@@ -83,6 +84,16 @@ jobs:
           generate_release_notes: true
           body: |
             ## Install
+
+            ```bash
+            curl -fsSL https://github.com/dineshh-m/kev/releases/latest/download/install.sh | bash
+            ```
+
+            The script detects your platform, verifies the download against
+            `SHA256SUMS`, and installs to `~/.local/bin` (override with
+            `KEV_INSTALL_DIR`). Pin a version with `bash -s -- ${{ github.ref_name }}`.
+
+            ### Manual install
 
             Download the archive for your platform, extract it, and put `kev` on your `PATH`:
 
@@ -114,4 +125,5 @@ jobs:
           files: |
             dist/*.tar.gz
             dist/*.zip
+            dist/install.sh
             dist/SHA256SUMS

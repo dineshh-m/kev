@@ -8,8 +8,21 @@ persist under `~/.kev/sessions`.
 ## Install
 
 Prebuilt binaries for Linux, macOS, and Windows (x64 + arm64) ship with every
-[GitHub release](https://github.com/dineshh-m/kev/releases). Download the
-archive for your platform, extract it, and put `kev` on your `PATH`:
+[GitHub release](https://github.com/dineshh-m/kev/releases). On Linux and
+macOS, install with:
+
+```bash
+curl -fsSL https://github.com/dineshh-m/kev/releases/latest/download/install.sh | bash
+```
+
+The script detects your platform, verifies the download against `SHA256SUMS`,
+and installs to `~/.local/bin` (override with `KEV_INSTALL_DIR`). Pin a version
+with `curl -fsSL .../install.sh | bash -s -- 0.1.0`.
+
+### Manual install
+
+Download the archive for your platform, extract it, and put `kev` on your
+`PATH`:
 
 ```bash
 mkdir -p ~/.local/bin
@@ -18,9 +31,9 @@ kev --version
 ```
 
 Available archives: `kev-<version>-linux-x64`, `linux-arm64`, `darwin-x64`,
-`darwin-arm64` (`.tar.gz`) and `kev-<version>-windows-x64.zip` (experimental).
-Each release includes a `SHA256SUMS` file — verify with
-`sha256sum -c SHA256SUMS --ignore-missing`.
+`darwin-arm64` (`.tar.gz`) and `kev-<version>-windows-x64.zip`, which is the
+install path for Windows (Git Bash/MINGW). Each release includes a
+`SHA256SUMS` file — verify with `sha256sum -c SHA256SUMS --ignore-missing`.
 
 macOS builds are unsigned (ad-hoc signed by Bun). If Gatekeeper complains about
 a downloaded binary, run `xattr -d com.apple.quarantine kev`.
@@ -96,7 +109,8 @@ Examples:
 ## Releasing (maintainers)
 
 CI (`.github/workflows/ci.yml`) typechecks, tests, and smoke-builds on every
-push and PR. A release is cut from a tag:
+push and PR, and exercises `scripts/install.sh` end-to-end against a mock
+release server (shellcheck + happy path + corrupted-archive rejection). A release is cut from a tag:
 
 1. Bump `version` in `package.json` (single source of truth — the binary's
    `--version` reads it, and CI rejects a tag that disagrees with it).
@@ -108,8 +122,11 @@ push and PR. A release is cut from a tag:
    ```
 
 3. `.github/workflows/release.yml` runs the tests, cross-compiles all five
-   targets (`bun run build:release` — archives + `SHA256SUMS`), smoke-tests the
-   Linux binary, and publishes a GitHub release with the archives attached.
+   targets (`bun run build:release` — archives + `install.sh` + `SHA256SUMS`),
+   smoke-tests the Linux binary, and publishes a GitHub release with the
+   archives attached. `install.sh` ships as an asset too, so the
+   `releases/latest/download/install.sh` one-liner always serves the copy
+   belonging to the newest release.
 
 `workflow_dispatch` runs the same build without publishing, for dry runs.
 

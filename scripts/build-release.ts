@@ -15,7 +15,9 @@ import packageJson from "../package.json";
  * Produces, in dist/:
  *   kev-v<version>-<os>-<arch>.tar.gz  (kev[.exe] inside)
  *   kev-v<version>-windows-x64.zip
- *   SHA256SUMS
+ *   install.sh                          (shipped as a release asset too, so the
+ *                                        curl|bash URL tracks the latest release)
+ *   SHA256SUMS                          (covers the archives and install.sh)
  */
 
 type Target = { os: "linux" | "darwin" | "windows"; arch: "x64" | "arm64" };
@@ -76,7 +78,14 @@ for (const t of TARGETS) {
   console.log(`  ${archiveName(t)}  ${bytes.byteLength} bytes`);
 }
 
+// The installer ships with every release; its checksum belongs in SHA256SUMS.
+const installer = `${distDir}/install.sh`;
+await copyFile("scripts/install.sh", installer);
+await chmod(installer, 0o755);
+const installerBytes = await readFile(installer);
+checksums.push(`${createHash("sha256").update(installerBytes).digest("hex")}  install.sh`);
+
 await writeFile(`${distDir}/SHA256SUMS`, `${checksums.join("\n")}\n`);
 await rm(stagingDir, { recursive: true, force: true });
 
-console.log(`\nBuilt kev ${tag}: ${TARGETS.length} archives + SHA256SUMS in ${distDir}/`);
+console.log(`\nBuilt kev ${tag}: ${TARGETS.length} archives + install.sh + SHA256SUMS in ${distDir}/`);
