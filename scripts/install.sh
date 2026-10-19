@@ -91,7 +91,7 @@ case ":${PATH}:" in
   *":${INSTALL_DIR}:"*) ;;
   *)
     say "note: ${INSTALL_DIR} is not on your PATH; add it with:"
-    printf '          export PATH="%s:$PATH"\n' "$INSTALL_DIR"
+    printf "          export PATH=\"%s:\$PATH\"\n" "$INSTALL_DIR"
     ;;
 esac
 
