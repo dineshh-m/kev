@@ -14,6 +14,7 @@ const TIPS = [
   "dangerous commands ask for a y before they run",
   "/new-session starts fresh, /resume-session restores",
   "scripts run locally in this project directory",
+  "click a ✦ Thought block to expand the reasoning",
 ] as const;
 
 const TIP_INTERVAL_MS = 4200;

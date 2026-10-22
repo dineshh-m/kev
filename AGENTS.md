@@ -43,7 +43,7 @@ Components use OpenTUI primitives: `<box>`, `<text>`, `<markdown>`, `<input>`, `
 - `src/tools.ts` — the tools handed to the model via `streamText`: `readFile` / `listFiles` for project inspection, plus `listCommands` / `readCommand` / `createCommand` / `updateCommand` for authoring commands.
 - `src/theme.ts` — exports `syntaxStyle` (`SyntaxStyle.fromStyles`), consumed by the `<markdown>` component.
 - `src/debug.ts` — the file logger (`log` / `logError`) writing to `~/.kev/kev.log`. No React here.
-- `src/components/` — presentational components: `AiMessage`, `UserMessage`, `CommandRun`, `CommandPalette`, `CommandDetail`, `ParamForm`, `SessionPicker`, `Spinner`, `AsciiBanner`, `HomeHero` (the empty-transcript welcome: framed banner panel, rotating tips, key legend, status line).
+- `src/components/` — presentational components: `AiMessage`, `UserMessage`, `CommandRun`, `CommandPalette`, `CommandDetail`, `ParamForm`, `SessionPicker`, `Spinner`, `AsciiBanner`, `HomeHero` (the empty-transcript welcome: framed banner panel, rotating tips, key legend, status line), `Reasoning` (a provider reasoning block).
 
 ## Command execution
 
@@ -97,6 +97,16 @@ The model endpoint is configured, not hardcoded. `src/config.ts` resolves it int
 - `resolveProviderConfig({ path, env })` is pure and sync (no async, so the hero can read it) and throws a descriptive `Error` for malformed JSON, a non-object file, a bad field type, or a non-http(s) `baseURL`. `getProviderConfig()` memoizes it for the process, logs a failure once through `logError`, and rethrows with context — the chat surfaces that message. Editing the file therefore requires a restart.
 - `getModelLabel()` derives the status-line name from `model` and never throws (falls back to `"no model"`); `HomeHero` uses it instead of importing a model id from `ai.ts`.
 - Keep secrets out of the config file: name the env var in `apiKeyEnv` rather than pasting a key.
+
+## Reasoning
+
+Providers that expose a reasoning model stream the model's thinking as structured parts, and Kev renders them. Nothing in `src/ai.ts` is involved: `@ai-sdk/openai-compatible` already parses `reasoning_content` / `reasoning` off the provider's deltas, and `toUIMessageStream` forwards them (`sendReasoning` defaults to true), so `readUIMessageStream` hands `AiMessage` a `{ type: "reasoning" }` part per thinking block.
+
+- `AiMessage` renders each reasoning part through `src/components/Reasoning.tsx`. The part is keyed by its **index**, not its id: the provider hands out the same id (`reasoning-0`) for every step of a message, so ids would collide once a turn reasons more than once.
+- A block opens on its own while the model is still thinking (`part.state === "streaming"`) and collapses to a one-line `✦ Thought · <duration>` summary when the step ends. Clicking it toggles it, and that choice then sticks — the automatic collapse never overrides it.
+- The duration is measured from the block's mount (the provider creates the part on its `reasoning-start` chunk), so it is only known for a block watched from its first token. A block restored from a saved session was already finished when it mounted and shows no duration rather than a made-up one.
+- Reasoning is persisted with the rest of the transcript and sent back to the model as `reasoning_content`; that round trip is the SDK's job and does not depend on anything here.
+- `sanitizeEntries` settles a reasoning part left `streaming` by a crash, the same way it settles a half-written text part.
 
 ## Built-in commands
 

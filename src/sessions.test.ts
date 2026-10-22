@@ -149,6 +149,18 @@ describe("sanitizeEntries", () => {
     ]);
   });
 
+  test("a streaming reasoning part settles to done", () => {
+    const partial: UIMessage = {
+      id: "a1",
+      role: "assistant",
+      parts: [{ type: "reasoning", id: "reasoning-0", text: "half a thought", state: "streaming" }],
+    };
+    const [entry] = sanitizeEntries([messageEntry(partial)]);
+    expect(entry?.kind === "message" && entry.message.parts).toEqual([
+      { type: "reasoning", id: "reasoning-0", text: "half a thought", state: "done" },
+    ]);
+  });
+
   test("a tool call with no output is dropped; a terminal one is kept", () => {
     const dangling = {
       type: "tool-listFiles",

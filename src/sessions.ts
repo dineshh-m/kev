@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { isToolUIPart, type UIMessage } from "ai";
+import { isReasoningUIPart, isToolUIPart, type UIMessage } from "ai";
 import { logError } from "./debug";
 import type { TranscriptEntry } from "./transcript";
 
@@ -83,9 +83,19 @@ export function sanitizeEntries(entries: TranscriptEntry[]): TranscriptEntry[] {
 
     const message: UIMessage = {
       ...entry.message,
-      parts: parts.map((part) =>
-        part.type === "text" && part.state !== "done" ? { ...part, state: "done" } : part,
-      ),
+      parts: parts.map((part) => {
+        // A half-written text part is settled so the UI stops rendering it as
+        // still arriving.
+        if (part.type === "text" && part.state !== "done") {
+          return { ...part, state: "done" };
+        }
+        // Same for a reasoning block: left streaming, it would render as an
+        // open thought for the rest of the session.
+        if (isReasoningUIPart(part) && part.state === "streaming") {
+          return { ...part, state: "done" };
+        }
+        return part;
+      }),
     };
     return { ...entry, message };
   });

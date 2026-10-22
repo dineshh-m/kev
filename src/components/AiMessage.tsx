@@ -1,6 +1,7 @@
 import { TextAttributes } from "@opentui/core";
-import { getToolName, isToolUIPart, type UIMessage } from "ai";
+import { getToolName, isReasoningUIPart, isToolUIPart, type UIMessage } from "ai";
 import { syntaxStyle } from "../theme";
+import { Reasoning } from "./Reasoning";
 
 const ARGS_PREVIEW_LIMIT = 60;
 
@@ -60,6 +61,13 @@ export function AiMessage({ message }: { message: UIMessage }) {
               streaming={part.state === "streaming"}
             />
           );
+        }
+
+        if (isReasoningUIPart(part)) {
+          // Keyed by index, not by part.id: the provider hands out the same
+          // id ("reasoning-0") for every step of a message, so ids would
+          // collide once a turn reasons more than once.
+          return <Reasoning key={index} part={part} />;
         }
 
         if (isToolUIPart(part)) {
