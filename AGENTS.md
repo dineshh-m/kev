@@ -43,6 +43,7 @@ Components use OpenTUI primitives: `<box>`, `<text>`, `<markdown>`, `<input>`, `
 - `src/tools.ts` — the tools handed to the model via `streamText`: `readFile` / `listFiles` for project inspection, plus `listCommands` / `readCommand` / `createCommand` / `updateCommand` for authoring commands.
 - `src/theme.ts` — exports `syntaxStyle` (`SyntaxStyle.fromStyles`), consumed by the `<markdown>` component.
 - `src/debug.ts` — the file logger (`log` / `logError`) writing to `~/.kev/kev.log`. No React here.
+- `src/errors.ts` — `describeError(error)`, the user-facing one-paragraph explanation of an LLM failure (HTTP status, provider message, endpoint, response body, cause chain). No React here.
 - `src/components/` — presentational components: `AiMessage`, `UserMessage`, `CommandRun`, `CommandPalette`, `CommandDetail`, `ParamForm`, `SessionPicker`, `Spinner`, `AsciiBanner`, `HomeHero` (the empty-transcript welcome: framed banner panel, rotating tips, key legend, status line), `Reasoning` (a provider reasoning block).
 
 ## Command execution
@@ -87,6 +88,15 @@ Errors are written to `~/.kev/kev.log` via `src/debug.ts` (`log(message)` and `l
 - The file rotates to `kev.log.old` once it passes ~1 MB. The directory is created lazily.
 - `src/index.tsx` installs `uncaughtException` (log then exit) and `unhandledRejection` (log and continue) handlers, and logs a failed `createCliRenderer`.
 - Every previously silent `catch {}` — session save/list/load, command load/parse, exec spawn/pipe/exit, the AI stream, and each tool `execute` — now routes through `logError`. Keep new error paths doing the same; a `catch {}` with no log is the bug this replaced.
+
+## Error reporting
+
+A failed model call must say why in the transcript, not just that it failed.
+
+- The AI SDK masks stream errors by default: `toUIMessageStream`'s `onError` is `() => "An error occurred."` so provider details never leak to a browser client. Kev calls the provider straight from the user's machine, so `App.tsx` overrides it with `describeError` (`src/errors.ts`); without that override every failure — bad key, unknown model, wrong `baseURL`, no network — renders as the same generic line.
+- `describeError` is display-only and never throws: it prefers `APICallError` fields (status code, provider message, URL, clipped response body), then follows `error.cause` down to Node's `ECONNREFUSED`/`ENOTFOUND`/timeout reason, collapses whitespace and clips the result. The raw error and its stack still go to `logError`; do not put stacks in the chat.
+- The same `onError` also formats `tool-output-error` parts, so tool failures render their real message instead of the masked one.
+- `readUIMessageStream` runs with `terminateOnError: true`, so an error chunk rejects the loop before the final message is applied. The catch appends `Error: <detail>` to the last assistant message (`appendLastAiError`) rather than replacing it, which keeps any text that streamed before the failure. An abort from `new-session`/`resume-session` is skipped by the `sessionEpochRef` check; never surface it as an error.
 
 ## Provider configuration
 

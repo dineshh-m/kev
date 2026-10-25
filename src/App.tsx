@@ -11,6 +11,7 @@ import {
 } from "./builtins";
 import { filterCommands, loadCommands, type KevCommand } from "./commands";
 import { logError } from "./debug";
+import { describeError } from "./errors";
 import { runCommand, type RunData } from "./exec";
 import {
   listSessions,
@@ -601,6 +602,25 @@ export function App() {
     });
   };
 
+  // Appending rather than replacing keeps whatever text streamed before the
+  // failure; `terminateOnError` throws before the final message is applied.
+  const appendLastAiError = (detail: string) => {
+    setEntries((prev) => {
+      const last = prev[prev.length - 1];
+      if (!last || last.kind !== "message" || last.message.role !== "assistant") return prev;
+      return [
+        ...prev.slice(0, -1),
+        messageEntry({
+          ...last.message,
+          parts: [
+            ...last.message.parts,
+            { type: "text", text: `Error: ${detail}`, state: "done" },
+          ],
+        }),
+      ];
+    });
+  };
+
   const handleSubmit = async () => {
     const prompt = draft.trim();
     if (!prompt || busyRef.current) return;
@@ -628,7 +648,7 @@ export function App() {
       const result = await streamAssistantResponse(chatMessages(nextEntries), controller.signal);
 
       for await (const uiMessage of readUIMessageStream({
-        stream: toUIMessageStream({ stream: result.stream }),
+        stream: toUIMessageStream({ stream: result.stream, onError: describeError }),
         message: assistantMsg,
         terminateOnError: true,
       })) {
@@ -639,11 +659,7 @@ export function App() {
       // A new session aborts the stream; its rejection is not an error to show.
       if (sessionEpochRef.current === epoch) {
         logError("streamAssistantResponse", error);
-        const message = error instanceof Error ? error.message : String(error);
-        updateLastAi({
-          ...assistantMsg,
-          parts: [{ type: "text", text: `Error: ${message}`, state: "done" }],
-        });
+        appendLastAiError(describeError(error));
       }
     } finally {
       if (streamControllerRef.current === controller) streamControllerRef.current = null;

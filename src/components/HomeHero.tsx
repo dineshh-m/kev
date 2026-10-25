@@ -52,11 +52,11 @@ export function HomeHero({ commandCount }: { commandCount: number }) {
   return (
     <box flexDirection="column" alignItems="center" flexShrink={0}>
       <box
-        border
-        borderStyle="rounded"
-        borderColor="#232323"
-        backgroundColor="#070707"
-        title=" kev "
+        // border
+        // borderStyle="rounded"
+        // borderColor="#232323"
+        // backgroundColor="#070707"
+        // title=" kev "
         titleColor="#4A6352"
         titleAlignment="center"
         flexDirection="column"
