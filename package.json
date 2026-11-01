@@ -17,7 +17,11 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.82",
+    "@ai-sdk/groq": "4.0.63",
+    "@ai-sdk/openai": "4.0.96",
     "@ai-sdk/openai-compatible": "^3.0.71",
+    "@ai-sdk/provider": "4.0.29",
     "@opentui/core": "^0.5.10",
     "@opentui/react": "^0.5.10",
     "ai": "^7.0.143",

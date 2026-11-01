@@ -1,6 +1,6 @@
 import { convertToModelMessages, streamText, stepCountIs, type UIMessage } from "ai";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { getProviderConfig } from "./config";
+import { createLanguageModel } from "./provider";
 import { KevTools } from "./tools";
 import { logError } from "./debug";
 
@@ -34,17 +34,11 @@ const MAX_STEPS = 20;
 
 /**
  * Build the chat model from the resolved provider config (~/.kev/config.json,
- * overridden by KEV_* env vars). Every provider is OpenAI-compatible, so this
- * is just an endpoint plus a key plus a model id.
+ * overridden by KEV_* env vars). `src/provider.ts` picks the native SDK for
+ * openai/anthropic/groq and falls back to openai-compatible for everything else.
  */
 function languageModel() {
-  const config = getProviderConfig();
-  const provider = createOpenAICompatible({
-    name: config.providerName,
-    baseURL: config.baseURL,
-    apiKey: config.apiKey,
-  });
-  return provider(config.model);
+  return createLanguageModel(getProviderConfig());
 }
 
 export async function streamAssistantResponse(messages: UIMessage[], signal?: AbortSignal) {

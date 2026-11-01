@@ -1,9 +1,9 @@
 # kev
 
 A terminal AI assistant built with [OpenTUI](https://github.com/anomalyco/opentui)
-and the [AI SDK](https://ai-sdk.dev). Chat with any OpenAI-compatible provider
-from a TUI, run custom slash commands, and pick up where you left off — sessions
-persist under `~/.kev/sessions`.
+and the [AI SDK](https://ai-sdk.dev). Chat with OpenAI, Anthropic, Groq or any
+OpenAI-compatible provider from a TUI, run custom slash commands, and pick up
+where you left off — sessions persist under `~/.kev/sessions`.
 
 ## Install
 
@@ -72,39 +72,67 @@ bun run build
 
 ## Provider configuration
 
-Kev talks to any OpenAI-compatible chat endpoint (Groq, OpenAI, OpenRouter,
-Together, Ollama, LM Studio, vLLM, …). The endpoint is configured in
-`~/.kev/config.json`:
+Kev talks to OpenAI, Anthropic and Groq through their native SDKs, and to
+anything else through an OpenAI-compatible endpoint. `provider` picks the SDK:
+
+| `provider` | SDK | default `baseURL` | default `apiKeyEnv` |
+| --- | --- | --- | --- |
+| `openai` | OpenAI Responses | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
+| `anthropic` | Anthropic Messages | `https://api.anthropic.com/v1` | `ANTHROPIC_API_KEY` |
+| `groq` | Groq chat completions | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` |
+| `openai-compatible` | OpenAI-compatible | required | none (keyless allowed) |
+
+The endpoint is configured in `~/.kev/config.json`:
 
 ```json
 {
-  "providerName": "groq",
-  "baseURL": "https://api.groq.com/openai/v1",
-  "model": "qwen/qwen3.8-27b",
+  "provider": "groq",
+  "model": "openai/gpt-oss-20b",
   "apiKeyEnv": "GROQ_API_KEY"
 }
 ```
 
-- All fields are optional. With no file, Kev uses the Groq defaults above — the
-  same behavior as before provider configuration existed.
+- `provider` is required whenever the file exists. With no file at all, Kev uses
+  the Groq preset (provider `groq`, model `qwen/qwen3.8-27b`).
+- Each provider seeds its own `baseURL` and `apiKeyEnv`; any field you write
+  wins. `model` has no cross-provider default: it is required for `openai`,
+  `anthropic` and `openai-compatible`, while `groq` falls back to its preset.
+  `baseURL` is required for `openai-compatible`.
+- `providerName` only matters for `openai-compatible`: it names the provider in
+  SDK calls and defaults to `custom`.
 - `apiKeyEnv` names the environment variable holding the API key; the key itself
   is never stored in the file. An inline `apiKey` is accepted but discouraged,
   and no key at all is fine for local endpoints like Ollama.
-- Precedence, lowest to highest: built-in default, `config.json`, then `KEV_*`
-  env vars (`KEV_PROVIDER`, `KEV_BASE_URL`, `KEV_MODEL`, `KEV_API_KEY_ENV`,
-  `KEV_API_KEY`). Editing the file requires a restart.
+- Precedence, lowest to highest: provider defaults, `config.json`, then `KEV_*`
+  env vars (`KEV_PROVIDER`, `KEV_PROVIDER_NAME`, `KEV_BASE_URL`, `KEV_MODEL`,
+  `KEV_API_KEY_ENV`, `KEV_API_KEY`). `KEV_PROVIDER` takes a provider id; a value
+  that isn't one is treated as a legacy provider name and resolves to
+  `openai-compatible`. Editing the file requires a restart.
 
 Examples:
 
 ```json
+// OpenAI
+{ "provider": "openai", "model": "gpt-5.1", "apiKeyEnv": "OPENAI_API_KEY" }
+
+// Anthropic
+{ "provider": "anthropic", "model": "claude-sonnet-4-5",
+  "apiKeyEnv": "ANTHROPIC_API_KEY" }
+
 // OpenRouter
-{ "providerName": "openrouter", "baseURL": "https://openrouter.ai/api/v1",
+{ "provider": "openai-compatible", "providerName": "openrouter",
+  "baseURL": "https://openrouter.ai/api/v1",
   "model": "anthropic/claude-sonnet-4.5", "apiKeyEnv": "OPENROUTER_API_KEY" }
 
 // Ollama, local, no key
-{ "providerName": "ollama", "baseURL": "http://localhost:11434/v1",
+{ "provider": "openai-compatible", "baseURL": "http://localhost:11434/v1",
   "model": "llama3.3:70b" }
 ```
+
+Upgrading from a config written before `provider` existed: add it. Use `"groq"`
+for a Groq endpoint — that also fixes reasoning models, which the
+OpenAI-compatible path could not round-trip — and `"openai-compatible"` for
+anything else.
 
 ## Releasing (maintainers)
 
