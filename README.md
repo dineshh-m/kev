@@ -1,9 +1,19 @@
-# kev
+<h1 align="center">Kev</h1>
 
-A terminal AI assistant built with [OpenTUI](https://github.com/anomalyco/opentui)
-and the [AI SDK](https://ai-sdk.dev). Chat with OpenAI, Anthropic, Groq or any
-OpenAI-compatible provider from a TUI, run custom slash commands, and pick up
-where you left off — sessions persist under `~/.kev/sessions`.
+<p align="center">
+   <img src="./docs/media/kev-logo.gif" width="300" alt="Demo"/>
+</p>
+
+Kev is an AI-powered terminal assistant (TUI) that lets you create reusable commands once and execute them anytime using the / command palette.
+
+If you've used coding agents, you're probably familiar with **slash commands** or **reusable prompts** - prompts that you define once and invoke whenever you need them using `/<prompt-name>`.
+
+Kev takes that idea a step further. Instead of just storing reusable prompts, Kev lets you **generate reusable commands with AI** and execute them anytime using the same `/` syntax.
+
+What exactly is a command? It can be any repetitive task, workflow, or sequence of instructions that you don't want to remember or manually recreate every time. Just describe what you need, let AI generate the command once, and Kev persists it for you.
+
+That's it! Your command is ready to be invoked whenever you need it with `/<command-name>`.
+
 
 ## Install
 
@@ -38,10 +48,6 @@ install path for Windows (Git Bash/MINGW). Each release includes a
 macOS builds are unsigned (ad-hoc signed by Bun). If Gatekeeper complains about
 a downloaded binary, run `xattr -d com.apple.quarantine kev`.
 
-The Groq default needs an API key; copy `.env.example` to `.env` in your working
-directory and set it (Bun loads it automatically), or export the variable in
-your shell.
-
 ## Run from source
 
 Requires [Bun](https://bun.sh/) 1.3.0 or later.
@@ -69,7 +75,6 @@ To build a standalone binary for your current platform:
 ```bash
 bun run build
 ```
-
 ## Provider configuration
 
 Kev talks to OpenAI, Anthropic and Groq through their native SDKs, and to
@@ -105,9 +110,7 @@ The endpoint is configured in `~/.kev/config.json`:
   and no key at all is fine for local endpoints like Ollama.
 - Precedence, lowest to highest: provider defaults, `config.json`, then `KEV_*`
   env vars (`KEV_PROVIDER`, `KEV_PROVIDER_NAME`, `KEV_BASE_URL`, `KEV_MODEL`,
-  `KEV_API_KEY_ENV`, `KEV_API_KEY`). `KEV_PROVIDER` takes a provider id; a value
-  that isn't one is treated as a legacy provider name and resolves to
-  `openai-compatible`. Editing the file requires a restart.
+  `KEV_API_KEY_ENV`, `KEV_API_KEY`). `KEV_PROVIDER` takes a provider id. Editing the file requires a restart.
 
 Examples:
 
@@ -128,34 +131,3 @@ Examples:
 { "provider": "openai-compatible", "baseURL": "http://localhost:11434/v1",
   "model": "llama3.3:70b" }
 ```
-
-Upgrading from a config written before `provider` existed: add it. Use `"groq"`
-for a Groq endpoint — that also fixes reasoning models, which the
-OpenAI-compatible path could not round-trip — and `"openai-compatible"` for
-anything else.
-
-## Releasing (maintainers)
-
-CI (`.github/workflows/ci.yml`) typechecks, tests, and smoke-builds on every
-push and PR, and exercises `scripts/install.sh` end-to-end against a mock
-release server (shellcheck + happy path + corrupted-archive rejection). A release is cut from a tag:
-
-1. Bump `version` in `package.json` (single source of truth — the binary's
-   `--version` reads it, and CI rejects a tag that disagrees with it).
-2. Commit, then tag and push:
-
-   ```bash
-   git tag v0.1.0
-   git push origin v0.1.0
-   ```
-
-3. `.github/workflows/release.yml` runs the tests, cross-compiles all five
-   targets (`bun run build:release` — archives + `install.sh` + `SHA256SUMS`),
-   smoke-tests the Linux binary, and publishes a GitHub release with the
-   archives attached. `install.sh` ships as an asset too, so the
-   `releases/latest/download/install.sh` one-liner always serves the copy
-   belonging to the newest release.
-
-`workflow_dispatch` runs the same build without publishing, for dry runs.
-
-This project was created using `bun create tui`. [create-tui](https://github.com/msmps/create-tui) is the easiest way to get started with OpenTUI.
