@@ -1,4 +1,4 @@
-<h1 align="center">Kev</h1>
+# Kev
 
 <p align="center">
    <img src="./docs/media/kev-logo.gif" width="300" alt="Demo"/>
